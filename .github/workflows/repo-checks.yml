@@ -1,0 +1,46 @@
+name: PR Checks
+
+on:
+  workflow_call:
+    inputs:
+      src:
+        description: 'The path to the source directory.'
+        required: true
+        type: string
+
+jobs:
+  check-version:
+    name: Check version bumped
+    runs-on: ubuntu-latest
+    steps:
+      - name: Initialize the environment
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v1
+      - name: Check version
+        run: python scripts/validate_version_bump.py
+  linting:
+    name: Run linting with flake8
+    runs-on: ubuntu-latest
+    steps:
+      - name: Initialize the environment
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v1
+      - name: Lint the source directory
+        run: flake8 ${{ inputs.src }}
+  check-deprecated:
+    name: Find code marked for removal in this version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Initialize the environment
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v1
+      - name: Deprecated check
+        run: derp . ${{ inputs.src }}/__version__.py
+  check-docs:
+    name: Check docs for warnings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Initialize the environment
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v1
+        with:
+          documentation: 'true'
+      - name: Build Docs
+        continue-on-error: true
+        run: make -C docs/ html SPHINXOPTS='-W --keep-going'
