@@ -29,7 +29,8 @@ Kicks off four jobs to perform standard repo checks. Namely:
 
 ### Run Tests (run-tests.yml)
 
-Runs the repo's tests against every supported Python version. It also kicks off a second run of tests in an environment where the dependency versions are the latest supported, instead of what's in requirements.txt.
+Runs the repo's tests against every supported Python version and every supported OS.
+It also kicks off a second run of tests in an environment where the dependency versions are the latest supported, instead of what's in requirements.txt.
 
 #### inputs
 
