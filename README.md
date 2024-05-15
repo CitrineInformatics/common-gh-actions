@@ -40,6 +40,12 @@ It also kicks off a second run of tests in an environment where the dependency v
 
 Build and deploy the docs using GitHub Pages.
 
-### Deploy to PyPI (deploy.yml)
+## Templates
+
+These are workflows which for whatever reason can't be shared. As such, we provide what it should look like in your repo.
+
+### Deploy to PyPI (deploy-template.yml)
 
 Package the code and deploy it to PyPI. This requires you have an action secret defined called `PYPI_API_TOKEN`.
+
+See https://github.com/pypi/warehouse/issues/11096 for details on why the PyPI deploy workflow cannot be shared.
