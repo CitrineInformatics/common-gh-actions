@@ -1,3 +1,10 @@
+# As noted in https://github.com/pypi/warehouse/issues/11096, the current
+# version of PyPI's GitHub Actions workflow uses the repo which calls it for
+# Trusted Publishing, meaning it doesn't support being called in a shared
+# workflow.
+# To use the common deploy workflow, copy the workflow below into your repo for
+# direct use. If/when they fix it, we'll update ASAP.
+
 name: Deploy to PyPI
 
 on:
