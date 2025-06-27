@@ -7,37 +7,15 @@ on:
         description: 'The path to the source directory.'
         required: true
         type: string
-      skip_38:
-        description: 'If true, skip running tests on Python 3.8.'
-        required: false
-        type: boolean
-        default: false
-      include_313:
-        description: 'If true, include Python 3.13 in the test matrix.'
-        required: false
-        type: boolean
-        default: false
 
 
 jobs:
-  matrix-prep:
-    runs-on: ubuntu-latest
-    outputs:
-      python-version: ${{ steps.version-interpolator.outputs.python-version }}
-    steps:
-      - name: Determine Python versions to test
-      - id: version-interpolator
-        run: |
-          if [ ! ${{ inputs.skip_38 }} = true ]; then PY38='"3.8", '; else PY38=''; fi
-          if [ ${{ inputs.include_313 }} = true ]; then PY313='", 3.13"'; else PY313=''; fi
-          printf 'python-version=[%s"3.9", "3.10", "3.11", "3.12"%s]' $PY38 $PY313) >> $GITHUB_OUTPUT
   run-tests:
     name: Execute unit tests
-    needs: matrix-prep
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{fromJson(needs.matrix_prep.outputs.python_version)}}
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
         runner-os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     runs-on: ${{ matrix.runner-os }}
     steps:
@@ -54,11 +32,10 @@ jobs:
     # support don't break with our latest changes. Since they're not the versions we directly state
     # you should use (i.e. in requirements.txt), they arguably aren't critical, hence not blocking.
     name: Non-blocking - Execute unit tests against latest version of dependencies
-    needs: matrix-prep
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{fromJson(needs.matrix_prep.outputs.python_version)}}
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
         runner-os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     runs-on: ${{ matrix.runner-os }}
     steps:
