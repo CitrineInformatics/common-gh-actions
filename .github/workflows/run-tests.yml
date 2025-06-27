@@ -23,6 +23,7 @@ jobs:
   matrix-prep:
     runs-on: ubuntu-latest
     outputs:
+<<<<<<< HEAD
       versions: ${{ steps.interpolator.outputs.versions }}
     steps:
       - name: Determine Python versions to test
@@ -33,13 +34,27 @@ jobs:
           printf 'versions=[%s"3.9", "3.10", "3.11", "3.12"%s]\n' "$PY38" "$PY313" >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
+=======
+      python-version: ${{ steps.version-interpolator.outputs.python-version }}
+    steps:
+      - name: Determine Python versions to test
+      - id: version-interpolator
+        run: |
+          if [ ! ${{ inputs.skip_38 }} = true ]; then PY38='"3.8", '; else PY38=''; fi
+          if [ ${{ inputs.include_313 }} = true ]; then PY313='", 3.13"'; else PY313=''; fi
+          printf 'python-version=[%s"3.9", "3.10", "3.11", "3.12"%s]' $PY38 $PY313) >> $GITHUB_OUTPUT
+>>>>>>> c488e9ce36417a4ddd5e33a055ca87a7d7905f91
   run-tests:
     name: Execute unit tests
     needs: matrix-prep
     strategy:
       fail-fast: false
       matrix:
+<<<<<<< HEAD
         python-version: ${{ fromJson(needs.matrix-prep.outputs.versions) }}
+=======
+        python-version: ${{fromJson(needs.matrix_prep.outputs.python_version)}}
+>>>>>>> c488e9ce36417a4ddd5e33a055ca87a7d7905f91
         runner-os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     runs-on: ${{ matrix.runner-os }}
     steps:
@@ -61,7 +76,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+<<<<<<< HEAD
         python-version: ${{ fromJson(needs.matrix-prep.outputs.versions) }}
+=======
+        python-version: ${{fromJson(needs.matrix_prep.outputs.python_version)}}
+>>>>>>> c488e9ce36417a4ddd5e33a055ca87a7d7905f91
         runner-os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     runs-on: ${{ matrix.runner-os }}
     steps:
