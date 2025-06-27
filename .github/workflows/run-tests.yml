@@ -30,7 +30,8 @@ jobs:
         run: |
           if [ ! ${{ inputs.skip_38 }} = true ]; then PY38='"3.8", '; else PY38=''; fi
           if [ ${{ inputs.include_313 }} = true ]; then PY313=', "3.13"'; else PY313=''; fi
-          printf 'python-version=[%s"3.9", "3.10", "3.11", "3.12"%s]' "$PY38" "$PY313" >> $GITHUB_OUTPUT
+          printf 'python-version=[%s"3.9", "3.10", "3.11", "3.12"%s]\n' "$PY38" "$PY313" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
   run-tests:
     name: Execute unit tests
     needs: matrix-prep
