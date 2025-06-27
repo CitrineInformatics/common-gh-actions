@@ -35,6 +35,8 @@ It also kicks off a second run of tests in an environment where the dependency v
 #### inputs
 
 - src: The directory containing the repo's source code.
+- skip_38: If true, skip running tests on Python 3.8. Defaults to false.
+- include_313: If true, include Python 3.13 in the test matrix. Defaults to false.
 
 ### Deploy Documentation (deploy-docs.yml)
 
