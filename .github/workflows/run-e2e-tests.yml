@@ -1,0 +1,23 @@
+name: PR Checks
+
+on:
+  workflow_call:
+    inputs:
+      CITRINE_PYTHON_VERSION:
+        description: 'The version of Citrine Python to test against'
+        required: true
+        type: string
+
+jobs:
+  invoke-devkit-e2e:
+    name: Nextgen-Devkit e2e tests
+    permissions:
+      checks: write
+      contents: read
+      id-token: write
+    uses: CitrineInformatics/nextgen-devkit/.github/workflows/test-e2e-eks.yml@main
+    with:
+      CITRINE_PYTHON_VERSION: ${{ inputs.CITRINE_PYTHON_VERSION }}
+    secrets:
+      DEVKIT_APP_ID: ${{ secrets.DEVKIT_APP_ID }}
+      DEVKIT_APP_PRIVATE_KEY: ${{ secrets.DEVKIT_APP_PRIVATE_KEY }}
