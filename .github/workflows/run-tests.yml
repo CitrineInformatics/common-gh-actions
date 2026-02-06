@@ -7,16 +7,16 @@ on:
         description: 'The path to the source directory.'
         required: true
         type: string
-      skip_38:
-        description: 'If true, skip running tests on Python 3.8.'
+      skip_39:
+        description: 'If true, omit Python 3.9 from the test matrix. Default: false'
         required: false
         type: boolean
         default: false
-      include_313:
-        description: 'If true, include Python 3.13 in the test matrix.'
+      include_314:
+        description: 'If true, include Python 3.14 in the test matrix. Default: true'
         required: false
         type: boolean
-        default: false
+        default: true
 
 
 jobs:
@@ -28,9 +28,9 @@ jobs:
       - name: Determine Python versions to test
         id: interpolator
         run: |
-          if [ ! ${{ inputs.skip_38 }} = true ]; then PY38='"3.8", '; else PY38=''; fi
-          if [ ${{ inputs.include_313 }} = true ]; then PY313=', "3.13"'; else PY313=''; fi
-          printf 'versions=[%s"3.9", "3.10", "3.11", "3.12"%s]\n' "$PY38" "$PY313" >> "$GITHUB_OUTPUT"
+          if [ ! ${{ inputs.skip_39 }} = true ]; then OLD='"3.9", '; else OLD=''; fi
+          if [ ${{ inputs.include_314 }} = true ]; then NEW=', "3.14"'; else NEW=''; fi
+          printf 'versions=[%s %s "3.10", "3.11", "3.12", "3.13"%s]\n' "$OLD" "$NEW" >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
   run-tests:
