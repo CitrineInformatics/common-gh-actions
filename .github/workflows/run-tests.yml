@@ -30,7 +30,7 @@ jobs:
         run: |
           if [ ! ${{ inputs.skip_39 }} = true ]; then OLD='"3.9", '; else OLD=''; fi
           if [ ${{ inputs.include_314 }} = true ]; then NEW=', "3.14"'; else NEW=''; fi
-          printf 'versions=[%s %s "3.10", "3.11", "3.12", "3.13"%s]\n' "$OLD" "$NEW" >> "$GITHUB_OUTPUT"
+          printf 'versions=[%s "3.10", "3.11", "3.12", "3.13"%s]\n' "$OLD" "$NEW" >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
   run-tests:
