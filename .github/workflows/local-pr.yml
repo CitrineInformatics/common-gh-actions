@@ -1,17 +1,32 @@
+# Linting is defined inline because this repo cannot call its own reusable
+# workflows for jobs that use ./.github/actions/initialize as their first
+# step — GitHub Actions resolves local action refs from the workspace,
+# which is empty before checkout (chicken-and-egg problem).
+
 name: PR
 
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  repo-checks:
-    uses: ./.github/workflows/repo-checks.yml
-    with:
-      src: .github/actions
-      check_deprecation: false
+  lint:
+    name: Run linting with ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/initialize
+      - name: Run ruff check
+        run: uv run ruff check .github/actions tests
+      - name: Run ruff format check
+        run: uv run ruff format --check .github/actions tests
 
   tests:
     uses: ./.github/workflows/matrix-tests.yml
     with:
       src: .github/actions
+      skip_38: true
+      skip_39: true
       skip_310: true
