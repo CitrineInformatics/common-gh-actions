@@ -1,0 +1,30 @@
+name: 'Extract Version'
+description: 'Extract the project version from pyproject.toml (supports static and dynamic versions)'
+inputs:
+  path:
+    description: 'Path to the project root directory (contains pyproject.toml)'
+    required: true
+outputs:
+  version:
+    description: 'The extracted project version string'
+    value: ${{ steps.extract.outputs.version }}
+runs:
+  using: "composite"
+  steps:
+    # This action is self-contained: it installs its own Python and
+    # dependencies rather than relying on the caller's environment.
+    # This keeps it usable from actions (like check-version-bump) that
+    # run before the project's own dependencies are installed.
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install packaging
+      run: pip install packaging
+      shell: bash
+    - name: Extract version
+      id: extract
+      # github.action_path points to *this* action's directory, so the
+      # script reference works regardless of the caller's working directory.
+      run: python "${{ github.action_path }}/extract_version.py" "${{ inputs.path }}"
+      shell: bash

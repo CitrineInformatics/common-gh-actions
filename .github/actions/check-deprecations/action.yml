@@ -1,0 +1,26 @@
+name: 'Check Deprecations'
+description: 'Verify that no deprecated code has passed its removal version'
+inputs:
+  src:
+    description: 'Path to the source directory to scan for deprecated code'
+    required: true
+  root:
+    description: 'Path to the project root containing pyproject.toml (defaults to current working directory)'
+    required: false
+    default: '.'
+runs:
+  using: "composite"
+  steps:
+    # IMPORTANT: The "uses: ./.github/actions/..." reference below resolves
+    # relative to the WORKSPACE ROOT, not this action's directory.  The caller
+    # must check out the repo at the workspace root (the default checkout path).
+    - name: Extract current version
+      id: current_version
+      uses: ./.github/actions/extract-version
+      with:
+        path: ${{ inputs.root }}
+    - name: Check for expired deprecations
+      # extract-version installs Python 3.12 and packaging; both are still
+      # available here since all steps share the same runner environment.
+      run: python "${{ github.action_path }}/check_deprecations.py" --src "${{ inputs.src }}" --version "${{ steps.current_version.outputs.version }}"
+      shell: bash

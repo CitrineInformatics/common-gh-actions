@@ -1,0 +1,32 @@
+name: 'Check Version Bump'
+description: 'Verify that the pyproject.toml version has been incremented vs. main'
+inputs:
+  pr_path:
+    description: 'Path to the PR checkout directory (contains pyproject.toml)'
+    required: true
+  main_path:
+    description: 'Path to the main checkout directory (contains pyproject.toml)'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    # IMPORTANT: The "uses: ./.github/actions/..." references below resolve
+    # relative to the WORKSPACE ROOT, not this action's directory.  The caller
+    # must ensure the repo is checked out at the workspace root (not into a
+    # subdirectory) so that these paths resolve correctly.  See the
+    # version-bump job in repo-checks.yml for the expected checkout pattern.
+    - name: Extract PR version
+      id: pr_version
+      uses: ./.github/actions/extract-version
+      with:
+        path: ${{ inputs.pr_path }}
+    - name: Extract main version
+      id: main_version
+      uses: ./.github/actions/extract-version
+      with:
+        path: ${{ inputs.main_path }}
+    - name: Verify version bump
+      # extract-version installs Python 3.12 and packaging; both are still
+      # available here since all steps share the same runner environment.
+      run: python "${{ github.action_path }}/check_version_bump.py" --pr-version "${{ steps.pr_version.outputs.version }}" --main-version "${{ steps.main_version.outputs.version }}"
+      shell: bash

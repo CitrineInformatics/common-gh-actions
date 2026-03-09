@@ -1,0 +1,17 @@
+name: PR
+
+on:
+  pull_request:
+
+jobs:
+  repo-checks:
+    uses: ./.github/workflows/repo-checks.yml
+    with:
+      src: .github/actions
+      check_deprecation: false
+
+  tests:
+    uses: ./.github/workflows/matrix-tests.yml
+    with:
+      src: .github/actions
+      skip_310: true

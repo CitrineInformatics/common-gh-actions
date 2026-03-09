@@ -1,0 +1,21 @@
+[project]
+name = "common-gh-actions"
+version = "3.0.0"
+description = "Shared GitHub Actions and reusable workflows for Citrine's public Python repositories"
+requires-python = ">= 3.11"
+license = "Apache-2.0"
+dependencies = ["packaging"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-cov", "ruff"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    ".github/actions/extract-version",
+    ".github/actions/check-version-bump",
+    ".github/actions/check-deprecations",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+src = [".github/actions", "tests"]
