@@ -27,7 +27,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "packaging" }]
+requires-dist = [{ name = "packaging", specifier = ">=21" }]
 
 [package.metadata.requires-dev]
 dev = [
