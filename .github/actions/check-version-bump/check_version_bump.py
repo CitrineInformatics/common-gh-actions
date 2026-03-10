@@ -34,9 +34,9 @@ def check_version_bump(*, pr_version: Version, main_version: Version) -> None:
     # most to least significant; once a higher component has increased, the
     # lower components are irrelevant (e.g. 1.0.0 → 2.0.0 is "Major" even
     # if minor/patch also changed).
-    if pr_version.major > main_version.major:
+    if pr_version.release[0] > main_version.release[0]:
         level = "Major"
-    elif pr_version.minor > main_version.minor:
+    elif pr_version.release[1] > main_version.release[1]:
         level = "Minor"
     else:
         level = "Patch"
