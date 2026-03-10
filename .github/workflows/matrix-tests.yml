@@ -66,6 +66,9 @@ jobs:
     name: Execute unit tests with default configuration
     runs-on: ubuntu-latest
     steps:
+      # Simple checkout before initialize allows common-gh-actions to use its own workflows
+      - name: Simple checkout
+        uses: actions/checkout@v6
       - name: Initialize the environment
         uses: ./.github/actions/initialize
       - name: Execute unit tests
@@ -121,6 +124,9 @@ jobs:
         runner-os: ${{ fromJson(needs.matrix-prep.outputs.runner-os) }}
     runs-on: ${{ matrix.runner-os }}
     steps:
+      # Simple checkout before initialize allows common-gh-actions to use its own workflows
+      - name: Simple checkout
+        uses: actions/checkout@v6
       - name: Initialize the environment
         uses: ./.github/actions/initialize
         with:
@@ -146,6 +152,9 @@ jobs:
         runner-os: ${{ fromJson(needs.matrix-prep.outputs.runner-os) }}
     runs-on: ${{ matrix.runner-os }}
     steps:
+      # Simple checkout before initialize allows common-gh-actions to use its own workflows
+      - name: Simple checkout
+        uses: actions/checkout@v6
       - name: Initialize the environment
         uses: ./.github/actions/initialize
         with:

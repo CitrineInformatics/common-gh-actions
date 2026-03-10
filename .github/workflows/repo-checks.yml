@@ -45,6 +45,9 @@ jobs:
     if: ${{ inputs.linter == 'ruff' }}
     runs-on: ubuntu-latest
     steps:
+      # Simple checkout before initialize allows common-gh-actions to use its own workflows
+      - name: Simple checkout
+        uses: actions/checkout@v6
       - name: Initialize development environment
         uses: ./.github/actions/initialize
       - name: Run ruff check
@@ -74,6 +77,7 @@ jobs:
     if: ${{ inputs.linter == 'flake8' }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - name: Initialize the development environment
         uses: ./.github/actions/initialize
       - name: Lint the source directory
@@ -85,6 +89,7 @@ jobs:
     if: ${{ inputs.linter == 'black' }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - name: Initialize the development environment
         uses: ./.github/actions/initialize
       - name: Run black format check
