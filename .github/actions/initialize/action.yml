@@ -1,31 +1,73 @@
 name: 'Initialize'
-description: 'Checkout repo and install dependencies'
+description: 'Set up Python and uv, and install project dependencies'
 inputs:
-  latest:
-    description: 'If true, ignore requirements.txt and the versions pinned there.'
-    default: 'false'
+  python_version:
+    description: 'Python version to install. If omitted, reads from .python-version.'
+    default: ''
+  resolution:
+    description: 'If provided, pass the argument to the uv --resolution flag ("highest" or "lowest-direct").  If omitted, do not use --resolution flag.'
+    default: ''
+  latest-citrine:
+    description: 'If true and citrine-python is a project dependency, install it from the main branch when resolution is highest'
+    type: boolean
+    default: true
+  latest-gemd:
+    description: 'If true and gemd-python is a project dependency, install it from the main branch when resolution is highest'
+    type: boolean
+    default: true
   documentation:
-    description: 'If true, install documentation build frameworks.'
-    default: 'false'
+    description: 'If true, include the docs dependency group in uv sync'
+    type: boolean
+    default: false
 runs:
   using: "composite"
   steps:
     - name: Check out repository code
-      uses: actions/checkout@v4
-    - name: Upgrade pip
-      run: python -m pip install --upgrade pip
+      uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python_version }}
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+    - name: Pin uv to the requested Python version
+      if: ${{ inputs.python_version != '' }}
+      run: uv python pin ${{ inputs.python_version }}
       shell: bash
-    - name: Install minimum-version runtime dependencies + GEMD
-      run: python -m pip install --only-binary ':all:' -r requirements.txt
+    - name: Install dependencies (default)
+      if: ${{ inputs.resolution == '' }}
+      run: uv sync --dev ${{ inputs.documentation == 'true' && '--group docs' || '' }}
       shell: bash
-      if: ${{ inputs.latest == 'false' }}
-    - name: Install test dependencies
-      run: python -m pip install --only-binary ':all:' -r test_requirements.txt
+    - name: Install dependencies (${{ inputs.resolution }})
+      if: ${{ inputs.resolution != '' }}
+      run: uv sync --dev --resolution ${{ inputs.resolution }} ${{ inputs.documentation == 'true' && '--group docs' || '' }}
       shell: bash
-    - name: Install documentation building framework
-      run: python -m pip install --only-binary ':all:' -r doc_requirements.txt
+    - name: Detect installed Citrine dependencies
+      id: detect-deps
+      if: ${{ inputs.resolution == 'highest' }}
+      # uv sync installs the project as editable so it's any easy + robust test for the current package
+      run: |
+        is_non_editable_dep() {
+          local info
+          info=$(uv pip show "$1" 2>/dev/null) || return 1
+          ! echo "$info" | grep -q "Editable project location"
+        }
+        echo "has-citrine=$(is_non_editable_dep citrine && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        echo "has-gemd=$(is_non_editable_dep gemd && echo true || echo false)" >> "$GITHUB_OUTPUT"
       shell: bash
-      if: ${{ inputs.documentation == 'true' }}
-    - name: Install gemd-python, along with the latest version of any outstanding dependencies
-      run: python -m pip install --only-binary ':all:' -e .
+    - name: Install citrine from main
+      if: ${{ inputs.resolution == 'highest' && inputs.latest-citrine == 'true' && steps.detect-deps.outputs.has-citrine == 'true' }}
+      run: |
+        if ! uv pip install "citrine @ git+https://github.com/CitrineInformatics/citrine-python.git@main" 2>&1; then
+          echo "::notice::Failed to install citrine from main (likely unsupported Python version). Falling back to latest compatible release."
+          uv pip install --resolution highest citrine
+        fi
+      shell: bash
+    - name: Install gemd from main
+      if: ${{ inputs.resolution == 'highest' && inputs.latest-gemd == 'true' && steps.detect-deps.outputs.has-gemd == 'true' }}
+      run: |
+        if ! uv pip install "gemd @ git+https://github.com/CitrineInformatics/gemd-python.git@main" 2>&1; then
+          echo "::notice::Failed to install gemd from main (likely unsupported Python version). Falling back to latest compatible release."
+          uv pip install --resolution highest gemd
+        fi
       shell: bash
