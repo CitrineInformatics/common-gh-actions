@@ -17,12 +17,12 @@ runs:
     # version-bump job in repo-checks.yml for the expected checkout pattern.
     - name: Extract PR version
       id: pr_version
-      uses: ./.github/actions/extract-version
+      uses: CitrineInformatics/common-gh-actions/.github/actions/extract-version@v3
       with:
         path: ${{ inputs.pr_path }}
     - name: Extract main version
       id: main_version
-      uses: ./.github/actions/extract-version
+      uses: CitrineInformatics/common-gh-actions/.github/actions/extract-version@v3
       with:
         path: ${{ inputs.main_path }}
     - name: Verify version bump
