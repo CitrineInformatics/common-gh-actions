@@ -15,7 +15,8 @@ Shared GitHub Actions and reusable workflows for CitrineInformatics Python repos
 - Action inputs use kebab-case; workflow inputs use snake_case
 - Action directories use kebab-case; Python scripts use matching snake_case names
 - Non-blocking jobs use `continue-on-error: true` and a "Non-blocking" name prefix
-- Local action refs (`./.github/actions/...`) are preferred over remote refs in reusable workflows — keeps action and workflow versions in sync
+- Reusable workflows (consumed via `workflow_call`) must use absolute action refs (`CitrineInformatics/common-gh-actions/.github/actions/...@v3`) so external consumers can resolve them
+- `local-pr.yml` is the only workflow that uses relative refs (`./.github/workflows/...`) since it runs CI for this repo itself
 - `workflow_call` inputs don't support enums — use a validation job with a `case` statement
 
 ## Key Design Decisions

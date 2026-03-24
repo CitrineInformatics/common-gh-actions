@@ -49,7 +49,7 @@ jobs:
       - name: Simple checkout
         uses: actions/checkout@v6
       - name: Initialize development environment
-        uses: ./.github/actions/initialize
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
       - name: Run ruff check
         run: uv run ruff check ${{ inputs.src }}
       - name: Run ruff format check
@@ -79,7 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Initialize the development environment
-        uses: ./.github/actions/initialize
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
       - name: Lint the source directory
         run: uv run flake8 ${{ inputs.src }}
 
@@ -91,7 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Initialize the development environment
-        uses: ./.github/actions/initialize
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
       - name: Run black format check
         run: uv run black --check ${{ inputs.src }}
 
@@ -108,7 +108,7 @@ jobs:
           ref: main
           path: main
       - name: Verify version bump
-        uses: ./.github/actions/check-version-bump
+        uses: CitrineInformatics/common-gh-actions/.github/actions/check-version-bump@v3
         with:
           pr_path: .
           main_path: main
@@ -121,6 +121,6 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v6
       - name: Check for expired deprecations
-        uses: ./.github/actions/check-deprecations
+        uses: CitrineInformatics/common-gh-actions/.github/actions/check-deprecations@v3
         with:
           src: ${{ inputs.src }}
