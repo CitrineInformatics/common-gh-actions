@@ -16,7 +16,7 @@ runs:
     # must check out the repo at the workspace root (the default checkout path).
     - name: Extract current version
       id: current_version
-      uses: ./.github/actions/extract-version
+      uses: CitrineInformatics/common-gh-actions/.github/actions/extract-version@v3
       with:
         path: ${{ inputs.root }}
     - name: Check for expired deprecations
