@@ -70,7 +70,7 @@ jobs:
       - name: Simple checkout
         uses: actions/checkout@v6
       - name: Initialize the environment
-        uses: ./.github/actions/initialize
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
       - name: Execute unit tests
         env:
           CITRINE_API_HOST: _TEST_HOST
@@ -128,7 +128,7 @@ jobs:
       - name: Simple checkout
         uses: actions/checkout@v6
       - name: Initialize the environment
-        uses: ./.github/actions/initialize
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
         with:
           python_version: ${{ matrix.python-version }}
           resolution: lowest-direct
@@ -156,7 +156,7 @@ jobs:
       - name: Simple checkout
         uses: actions/checkout@v6
       - name: Initialize the environment
-        uses: ./.github/actions/initialize
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
         with:
           python_version: ${{ matrix.python-version }}
           resolution: highest
