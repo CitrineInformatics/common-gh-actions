@@ -27,6 +27,8 @@ jobs:
         uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
         with:
           documentation: 'true'
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
       - name: Build Docs
         run: |
           make -C docs/ html
