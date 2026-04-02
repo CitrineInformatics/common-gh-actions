@@ -22,6 +22,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_311:
+        description: 'If true, omit Python 3.11 from the test matrix. Default: false'
+        required: false
+        type: boolean
+        default: false
       include_313:
         description: 'If true, include Python 3.13 in the test matrix. Default: true'
         required: false
@@ -71,6 +76,9 @@ jobs:
         uses: actions/checkout@v6
       - name: Initialize the environment
         uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
       - name: Execute unit tests
         env:
           CITRINE_API_HOST: _TEST_HOST
@@ -94,6 +102,7 @@ jobs:
               '3.8': '${{ inputs.skip_38 }}',
               '3.9': '${{ inputs.skip_39 }}',
               '3.10': '${{ inputs.skip_310 }}',
+              '3.11': '${{ inputs.skip_311 }}',
           }
           include = {
               '3.13': '${{ inputs.include_313 }}',
@@ -101,7 +110,7 @@ jobs:
               '3.15': '${{ inputs.include_315 }}',
           }
           versions = [v for v, s in skip.items() if s != 'true']
-          versions += ['3.11', '3.12']
+          versions += ['3.12']
           versions += [v for v, i in include.items() if i == 'true']
           runner_os = ['ubuntu-latest']
           if '${{ inputs.include_windows }}' == 'true':
@@ -132,6 +141,8 @@ jobs:
         with:
           python_version: ${{ matrix.python-version }}
           resolution: lowest-direct
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
       - name: Execute unit tests
         env:
           CITRINE_API_HOST: _TEST_HOST
@@ -160,6 +171,8 @@ jobs:
         with:
           python_version: ${{ matrix.python-version }}
           resolution: highest
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
       - name: Execute unit tests
         env:
           CITRINE_API_HOST: _TEST_HOST

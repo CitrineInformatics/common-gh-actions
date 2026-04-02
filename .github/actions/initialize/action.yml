@@ -19,6 +19,14 @@ inputs:
     description: 'If true, include the docs dependency group in uv sync'
     type: boolean
     default: false
+  app-id:
+    description: 'GitHub App ID for generating a token to access private repositories. If omitted, private repo access is not configured.'
+    required: false
+    default: ''
+  app-private-key:
+    description: 'GitHub App private key for generating a token to access private repositories. If omitted, private repo access is not configured.'
+    required: false
+    default: ''
 runs:
   using: "composite"
   steps:
@@ -28,6 +36,18 @@ runs:
       uses: actions/setup-python@v6
       with:
         python-version: ${{ inputs.python_version }}
+    - name: Generate app token
+      if: ${{ inputs.app-id != '' && inputs.app-private-key != '' }}
+      id: app-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: CitrineInformatics
+    - name: Update git to use CitrineInformatics token for repository access
+      if: ${{ steps.app-token.outputs.token != '' }}
+      run: git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+      shell: bash
     - name: Install uv
       uses: astral-sh/setup-uv@v7
     - name: Pin uv to the requested Python version

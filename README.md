@@ -2,23 +2,60 @@
 
 Shared GitHub Actions and reusable workflows for Citrine's Python repositories.
 
+## Quick Start
+
+To use these shared workflows in your repository, call them from a workflow file (e.g. `.github/workflows/pr.yml`):
+
+```yaml
+name: PR
+
+on:
+  pull_request:
+
+jobs:
+  checks:
+    uses: CitrineInformatics/common-gh-actions/.github/workflows/repo-checks.yml@v3
+    secrets: inherit
+    with:
+      src: src/my_package
+
+  tests:
+    uses: CitrineInformatics/common-gh-actions/.github/workflows/matrix-tests.yml@v3
+    secrets: inherit
+    with:
+      src: src/my_package
+```
+
+Pin to a major version tag (e.g. `@v3`) to receive non-breaking updates automatically.
+
+### Prerequisites
+
+If you want private repository access (i.e., your repository depends on another private repository for its testing), your repository must have the following **Actions secrets** configured:
+
+- `AUTOMATION_APP_ID` — The GitHub App ID
+- `AUTOMATION_APP_PRIVATE_KEY` — The GitHub App private key
+
+The `initialize` action will use them to generate a GitHub App token for private repository access.  Pass them to reusable workflows with `secrets: inherit`.
+
 ## Actions
 
 ### initialize
 
 Checks out the caller's repository, sets up Python (via `actions/setup-python`), and installs project dependencies using `uv`.
 
-Other Actions (`extract-version`, `check-version-bump`, `check-deprecations`) do **not** include checkout — callers must handle it themselves.  
+Other Actions (`extract-version`, `check-version-bump`, `check-deprecations`) do **not** include checkout — callers must handle it themselves.
 This is intentional so that build issues do not interfere with other checks.
 
 #### Inputs
 
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
+| `app-id` | no | `""` | GitHub App ID for private repository access. If omitted, private repo access is not configured. |
+| `app-private-key` | no | `""` | GitHub App private key for private repository access. If omitted, private repo access is not configured. |
 | `python_version` | no | *(reads `.python-version`)* | Python version to install |
 | `resolution` | no | `""` | Passed to `uv --resolution` (`"highest"` or `"lowest-direct"`) |
-| `latest-citrine` | no | `true` | Install citrine from the main branch.  This is skipped if `resolution` is not `"highest"` or if the project itself *is* citrine-python (citrine is an editable dependency) |
-| `latest-gemd` | no | `true` | Install gemd from the main branch.  This is skipped if `resolution` is not `"highest"` or if the project itself *is* gemd-python (gemd is an editable dependency) |
+| `latest-citrine` | no | `true` | Install citrine from the main branch. Skipped if `resolution` is not `"highest"` or if the project itself *is* citrine-python (citrine is an editable dependency) |
+| `latest-gemd` | no | `true` | Install gemd from the main branch. Skipped if `resolution` is not `"highest"` or if the project itself *is* gemd-python (gemd is an editable dependency) |
 | `documentation` | no | `false` | Include the `docs` dependency group in `uv sync` |
 
 ### extract-version
@@ -89,8 +126,8 @@ Runs standard PR checks: linting, version bump verification, and deprecation sca
 ### matrix-tests.yml (PR Tests)
 
 Runs unit tests across a Python version / OS matrix, with coverage enforcement.
-Expects to run on Python 3.11 and 3.12 at a minimum.
-Coverage is only enforced on the pinned Python version.
+The default matrix includes Python 3.10–3.14; use the `skip_*` and `include_*` inputs to customize.
+Coverage is only enforced on the pinned Python version (run-tests-default job).
 
 #### Inputs
 
@@ -100,11 +137,12 @@ Coverage is only enforced on the pinned Python version.
 | `skip_38` | no | `true` | Omit Python 3.8 from the matrix |
 | `skip_39` | no | `true` | Omit Python 3.9 from the matrix |
 | `skip_310` | no | `false` | Omit Python 3.10 from the matrix |
+| `skip_311` | no | `false` | Omit Python 3.11 from the matrix |
 | `include_313` | no | `true` | Include Python 3.13 in the matrix |
 | `include_314` | no | `true` | Include Python 3.14 in the matrix |
 | `include_315` | no | `false` | Include Python 3.15 in the matrix |
 | `coverage_fails_under` | no | `100` | Minimum required coverage percentage |
-| `branch_coverage` | no | `false` | Include `--cov-branch` in coverage flags |
+| `branch_coverage` | no | `false` | Include `--cov-branch` in coverage flags at the percentage provided |
 | `include_windows` | no | `true` | Include windows-latest in the test matrix |
 | `include_macos` | no | `true` | Include macos-latest in the test matrix |
 
