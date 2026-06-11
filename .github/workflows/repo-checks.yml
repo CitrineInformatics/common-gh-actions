@@ -22,6 +22,11 @@ on:
         required: false
         type: boolean
         default: true
+      check_uv_lock:
+        description: 'If true, verify that uv.lock is in sync with pyproject.toml.'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -133,3 +138,18 @@ jobs:
         uses: CitrineInformatics/common-gh-actions/.github/actions/check-deprecations@v3
         with:
           src: ${{ inputs.src }}
+
+  uv-lock-check:
+    name: Verify uv.lock is up to date
+    if: ${{ inputs.check_uv_lock }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      # A stale lock forces `uv sync` to re-resolve, which fails in lanes
+      # without git auth when the lockfile references private git sources.
+      # `uv lock --check` exits non-zero on a stale lock without modifying it.
+      - name: Verify lockfile matches pyproject.toml
+        run: uv lock --check
