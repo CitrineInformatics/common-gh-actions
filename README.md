@@ -102,7 +102,7 @@ Scans Python source files for `@deprecation.deprecated` decorators and `warnings
 
 ### repo-checks.yml (PR Checks)
 
-Runs standard PR checks: linting, version bump verification, and deprecation scanning.
+Runs standard PR checks: linting, version bump verification, deprecation scanning, and uv.lock consistency.
 
 #### Inputs
 
@@ -112,6 +112,7 @@ Runs standard PR checks: linting, version bump verification, and deprecation sca
 | `linter` | no | `"ruff"` | Which linter to run. Must be one of: `ruff`, `flake8`, `black`, `none` |
 | `check_version_bump` | no | `true` | Verify the version in `pyproject.toml` has been incremented |
 | `check_deprecation` | no | `true` | Check for expired deprecations |
+| `check_uv_lock` | no | `true` | Verify `uv.lock` is in sync with `pyproject.toml` |
 
 #### Jobs
 
@@ -122,6 +123,7 @@ Runs standard PR checks: linting, version bump verification, and deprecation sca
 - **linting-black** -- `black --check` formatting check (when `linter` is `black`).
 - **version-bump** -- Compares PR vs. main version (skippable).
 - **deprecation-check** -- Scans for expired deprecations (skippable).
+- **uv-lock-check** -- Runs `uv lock --check` to verify `uv.lock` matches `pyproject.toml` (skippable).
 
 ### matrix-tests.yml (PR Tests)
 
