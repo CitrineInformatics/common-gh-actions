@@ -1,0 +1,82 @@
+name: ECR Release
+
+on:
+  workflow_call:
+    inputs:
+      repositories:
+        description: 'Newline- or space-separated ECR repository names, all from the same build'
+        required: true
+        type: string
+      source_tag:
+        description: 'Tag of the image to release. Default: main'
+        required: false
+        type: string
+        default: ''
+      regions:
+        description: 'Newline- or space-separated AWS regions; the first is the source of truth. Default: vars.ECR_REPLICATION_REGIONS'
+        required: false
+        type: string
+        default: ''
+      aws_role:
+        description: 'IAM role to assume through OIDC. Default: vars.AWS_ECR_ROLE'
+        required: false
+        type: string
+        default: ''
+      aws_region:
+        description: 'Region for the AWS credentials. Default: vars.ECR_REGION'
+        required: false
+        type: string
+        default: ''
+      version:
+        description: 'Override the v<major.minor>.<n> version read from the image tags'
+        required: false
+        type: string
+        default: ''
+      github_release:
+        description: 'Create the git tag and GitHub release. Default: true'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      release_tag:
+        description: 'release-v<version>, or empty when the image has no version'
+        value: ${{ jobs.release.outputs.release_tag }}
+      ordered_tag:
+        description: 'release-YYYY.MM.DD.HHMMSS (UTC), which the GitHub release hangs off'
+        value: ${{ jobs.release.outputs.ordered_tag }}
+      short_sha:
+        description: 'Short SHA of the commit the image was built from'
+        value: ${{ jobs.release.outputs.short_sha }}
+      digests:
+        description: 'JSON object of repository to released image digest'
+        value: ${{ jobs.release.outputs.digests }}
+
+jobs:
+  release:
+    name: Release image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      release_tag: ${{ steps.release.outputs.release-tag }}
+      ordered_tag: ${{ steps.release.outputs.ordered-tag }}
+      short_sha: ${{ steps.release.outputs.short-sha }}
+      digests: ${{ steps.release.outputs.digests }}
+    steps:
+      # vars resolve to the caller's repository variables in a called workflow.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ inputs.aws_role || vars.AWS_ECR_ROLE }}
+          aws-region: ${{ inputs.aws_region || vars.ECR_REGION }}
+      - name: Release
+        id: release
+        uses: CitrineInformatics/common-gh-actions/.github/actions/ecr-release@v3
+        with:
+          repositories: ${{ inputs.repositories }}
+          source-tag: ${{ inputs.source_tag || 'main' }}
+          regions: ${{ inputs.regions || vars.ECR_REPLICATION_REGIONS }}
+          version: ${{ inputs.version }}
+          github-release: ${{ inputs.github_release }}

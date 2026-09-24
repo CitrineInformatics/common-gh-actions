@@ -1,6 +1,6 @@
 # common-gh-actions
 
-Shared GitHub Actions and reusable workflows for CitrineInformatics Python repositories.
+Shared GitHub Actions and reusable workflows for CitrineInformatics repositories.
 
 ## Project Structure
 
@@ -24,6 +24,7 @@ Shared GitHub Actions and reusable workflows for CitrineInformatics Python repos
 - `initialize` includes checkout because it's consumed by external repos with a pinned tag
 - `extract-version`, `check-version-bump`, and `check-deprecations` do NOT include checkout so build issues don't interfere with checks
 - `extract-version` installs its own Python 3.12 and `packaging` — independent of the caller's environment
+- `ecr-release` needs no checkout: Python (boto3, its own 3.12) does the ECR retagging, then a bash step records the GitHub release with `gh`, so the Python never shells out
 - Self-clobber guard: `uv sync --dev` installs the project as editable; `uv pip show` + `Editable project location` grep distinguishes the project from its dependencies
 - User prefers simple solutions over regex-based parsing
 

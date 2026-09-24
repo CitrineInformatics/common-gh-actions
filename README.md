@@ -1,6 +1,6 @@
 # common-gh-actions
 
-Shared GitHub Actions and reusable workflows for Citrine's Python repositories.
+Shared GitHub Actions and reusable workflows for Citrine repositories.
 
 ## Quick Start
 
@@ -98,6 +98,32 @@ Scans Python source files for `@deprecation.deprecated` decorators and `warnings
 | `src` | yes | | Path to the source directory to scan |
 | `root` | no | `"."` | Path to the project root containing `pyproject.toml` |
 
+### ecr-release
+
+Marks a published ECR image as a release without rebuilding it. The image gets `release-v<version>` (when it carries a `v<major.minor>.<n>` tag) and `release-YYYY.MM.DD.HHMMSS` (UTC) in every region, on the same digest everywhere. A release tag is never moved, so re-running a release is a no-op. It also creates a GitHub release on the ordered tag, with `release-v<version>` as an extra git tag on the same commit.
+
+It assumes AWS credentials are already configured and needs `contents: write` for the GitHub release. Most repos call the [`ecr-release.yml`](#ecr-releaseyml-ecr-release) workflow instead.
+
+#### Inputs
+
+| Name | Required | Default | Description |
+|------|----------|---------|-------------|
+| `repositories` | yes | | Newline- or space-separated ECR repository names, all from the same build |
+| `source-tag` | no | `main` | Tag of the image to release; resolved to a digest once |
+| `regions` | yes | | Newline- or space-separated AWS regions; the first is the source of truth |
+| `version` | no | `""` | Override the `v<major.minor>.<n>` version read from the image tags |
+| `github-release` | no | `true` | Create the git tag and GitHub release |
+| `github-token` | no | `github.token` | Token for the GitHub release |
+
+#### Outputs
+
+| Name | Description |
+|------|-------------|
+| `release-tag` | `release-v<version>`, or empty when the image has no version |
+| `ordered-tag` | `release-YYYY.MM.DD.HHMMSS`, which the GitHub release hangs off |
+| `short-sha` | Short SHA of the commit the image was built from (from its `main-<sha>` tag) |
+| `digests` | JSON object of repository to released image digest |
+
 ## Workflows
 
 ### repo-checks.yml (PR Checks)
@@ -153,6 +179,54 @@ Coverage is only enforced on the pinned Python version (run-tests-default job).
 - **run-tests-default** -- Tests with default dependencies and coverage threshold.
 - **run-tests** -- Matrix across Python versions and OSes with `lowest-direct` resolution.
 - **run-tests-against-latest** -- Matrix across Python versions and OSes with `highest` resolution, potentially including the main branches of citrine-python and gemd-python.
+
+### ecr-release.yml (ECR Release)
+
+Configures AWS credentials through OIDC, then runs the [`ecr-release`](#ecr-release) action.
+
+```yaml
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: 'Image tag to release (main-<sha> or v<major.minor>.<n>); empty = current main'
+        type: string
+
+jobs:
+  release:
+    uses: CitrineInformatics/common-gh-actions/.github/workflows/ecr-release.yml@v3
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      repositories: platform/backend/my-service
+      source_tag: ${{ inputs.source_tag }}
+```
+
+The caller needs `contents: write` and `id-token: write`. A called workflow reads the caller's repository variables, so callers normally set only `repositories`.
+
+#### Inputs
+
+| Name | Required | Default | Description |
+|------|----------|---------|-------------|
+| `repositories` | yes | | Newline- or space-separated ECR repository names |
+| `source_tag` | no | `main` | Tag of the image to release |
+| `regions` | no | `vars.ECR_REPLICATION_REGIONS` | AWS regions; the first is the source of truth |
+| `aws_role` | no | `vars.AWS_ECR_ROLE` | IAM role to assume through OIDC |
+| `aws_region` | no | `vars.ECR_REGION` | Region for the AWS credentials |
+| `version` | no | `""` | Override the version read from the image tags |
+| `github_release` | no | `true` | Create the git tag and GitHub release |
+
+#### Outputs
+
+| Name | Description |
+|------|-------------|
+| `release_tag` | `release-v<version>`, or empty when the image has no version |
+| `ordered_tag` | `release-YYYY.MM.DD.HHMMSS` |
+| `short_sha` | Short SHA of the commit the image was built from |
+| `digests` | JSON object of repository to released image digest |
 
 ### deploy-docs.yml (Build and Deploy Docs)
 
