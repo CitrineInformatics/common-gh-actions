@@ -100,7 +100,9 @@ Scans Python source files for `@deprecation.deprecated` decorators and `warnings
 
 ### ecr-release
 
-Marks a published ECR image as a release without rebuilding it. The image gets `release-v<version>` (when it carries a `v<major.minor>.<n>` tag) and `release-YYYY.MM.DD.HHMMSS` (UTC) in every region, on the same digest everywhere. A release tag is never moved, so re-running a release is a no-op. It also creates a GitHub release on the ordered tag, with `release-v<version>` as an extra git tag on the same commit.
+Marks a published ECR image as a release without rebuilding it. The image gets `release-v<version>` (when it carries a `v<major.minor>.<n>` tag) and `release-YYYY.MM.DD.HHMMSS` (UTC) in every region, on the same digest everywhere. An immutable source tag is required. Every regional manifest, destination tag, and GitHub commit/tag (when enabled) is checked before release tags are written. A release tag is never moved, so re-running a release is a no-op. Unexpected write failures can leave a partial release; retry the same source tag to complete it. It also creates a GitHub release on the ordered tag, with `release-v<version>` as an extra git tag on the same commit.
+
+An explicit version source tag supplies the release version, and an explicit commit source tag supplies the commit. Ambiguous inferred versions or commits fail; use a version source tag or the `version` override to resolve multiple version tags.
 
 It assumes AWS credentials are already configured and needs `contents: write` for the GitHub release. Most repos call the [`ecr-release.yml`](#ecr-releaseyml-ecr-release) workflow instead.
 
@@ -109,7 +111,7 @@ It assumes AWS credentials are already configured and needs `contents: write` fo
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
 | `repositories` | yes | | Newline- or space-separated ECR repository names, all from the same build |
-| `source-tag` | no | `main` | Tag of the image to release; resolved to a digest once |
+| `source-tag` | yes | | Immutable image tag: `main-<sha>` or `v<major.minor>.<n>`; resolved to a digest once |
 | `regions` | yes | | Newline- or space-separated AWS regions; the first is the source of truth |
 | `version` | no | `""` | Override the `v<major.minor>.<n>` version read from the image tags |
 | `github-release` | no | `true` | Create the git tag and GitHub release |
@@ -184,6 +186,8 @@ Coverage is only enforced on the pinned Python version (run-tests-default job).
 
 Configures AWS credentials through OIDC, then runs the [`ecr-release`](#ecr-release) action.
 
+The ECR release workflow and action use the `ecr-release-v1` tag, independently of the repository's existing `v3` workflows. Publish this tag on a commit containing both components before enabling callers.
+
 ```yaml
 name: Release
 
@@ -191,12 +195,13 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: 'Image tag to release (main-<sha> or v<major.minor>.<n>); empty = current main'
+        description: 'Immutable image tag to release: main-<sha> or v<major.minor>.<n>'
+        required: true
         type: string
 
 jobs:
   release:
-    uses: CitrineInformatics/common-gh-actions/.github/workflows/ecr-release.yml@v3
+    uses: CitrineInformatics/common-gh-actions/.github/workflows/ecr-release.yml@ecr-release-v1
     permissions:
       contents: write
       id-token: write
@@ -212,7 +217,7 @@ The caller needs `contents: write` and `id-token: write`. A called workflow read
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
 | `repositories` | yes | | Newline- or space-separated ECR repository names |
-| `source_tag` | no | `main` | Tag of the image to release |
+| `source_tag` | yes | | Immutable image tag: `main-<sha>` or `v<major.minor>.<n>` |
 | `regions` | no | `vars.ECR_REPLICATION_REGIONS` | AWS regions; the first is the source of truth |
 | `aws_role` | no | `vars.AWS_ECR_ROLE` | IAM role to assume through OIDC |
 | `aws_region` | no | `vars.ECR_REGION` | Region for the AWS credentials |

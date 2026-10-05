@@ -3,14 +3,14 @@
 The image's digest is resolved once in the first region, then tagged
 ``release-v<version>`` (when the image carries a version) and
 ``release-YYYY.MM.DD.HHMMSS`` in every region. A release tag is never moved, so
-re-running a release is a no-op. The action's next step records the GitHub
-release from this script's outputs.
+re-running a release is a no-op. Planning checks all destinations without
+writing; the action validates GitHub before applying the saved plan.
 """
 
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -50,64 +50,143 @@ class Release:
     images: list[Image]
 
 
+@dataclass(frozen=True)
+class Manifest:
+    repository: str
+    digest: str
+    region: str
+    content: str
+    media_type: str
+
+
+@dataclass(frozen=True)
+class Plan:
+    release: Release
+    manifests: list[Manifest]
+
+
 def run(
     clients: dict,
     repositories: list[str],
     source_tag: str,
     version_override: str,
     now: datetime,
-) -> Release:
-    """Release the images tagged ``source_tag``; the first client's region is the source of truth."""
+) -> Plan:
+    """Resolve immutable sources and preflight every ECR destination without writing."""
+    if not (is_sha_tag(source_tag) or is_version_tag(source_tag)):
+        raise ReleaseError(
+            "source tag must be main-<sha> or v<major>.<minor>.<n>; mutable tags and empty inputs cannot be released"
+        )
     regions = list(clients)
     first = clients[regions[0]]
-
     resolved = [describe_by_tag(first, repo, source_tag) for repo in repositories]
     images = [image for image, _ in resolved]
-    first_tags = resolved[0][1]
-
-    version = version_from_tags(first_tags, version_override)
-    short_sha = short_sha_from_tags(first_tags)
+    all_tags = [tag for _, tags in resolved for tag in tags]
+    short_sha = short_sha_from_tags(all_tags, source_tag)
     check_same_build({image.repository: tags for image, tags in resolved}, short_sha)
-
-    ordered_tag = choose_ordered_tag((tag for _, tags in resolved for tag in tags), now)
-    release_tag = release_tag_for(version)
-    new_tags = [tag for tag in (release_tag, ordered_tag) if tag]
-    for image in images:
-        retag_everywhere(clients, image, new_tags)
-
-    return Release(
+    release = Release(
         source_tag=source_tag,
         short_sha=short_sha,
-        release_tag=release_tag,
-        ordered_tag=ordered_tag,
+        release_tag=release_tag_for(
+            version_from_tags(all_tags, version_override, source_tag)
+        ),
+        ordered_tag=choose_ordered_tag(all_tags, now),
         regions=regions,
         images=images,
+    )
+    manifests = []
+    for image in images:
+        for region, client in clients.items():
+            content, media_type = fetch_manifest(client, image.repository, image.digest)
+            manifests.append(
+                Manifest(image.repository, image.digest, region, content, media_type)
+            )
+    check_destinations(clients, release, manifests)
+    return Plan(release, manifests)
+
+
+def release_tags(release: Release) -> list[str]:
+    return [tag for tag in (release.release_tag, release.ordered_tag) if tag]
+
+
+def check_destinations(
+    clients: dict, release: Release, manifests: list[Manifest]
+) -> list[tuple[Manifest, str]]:
+    pending = []
+    for manifest in manifests:
+        client = clients[manifest.region]
+        for tag in release_tags(release):
+            existing = digest_for_tag(client, manifest.repository, tag)
+            if should_put(tag, existing, manifest.digest):
+                pending.append((manifest, tag))
+    return pending
+
+
+def apply_plan(clients: dict, plan: Plan) -> None:
+    # Recheck every destination before any writes, using the digests selected by preflight.
+    pending = check_destinations(clients, plan.release, plan.manifests)
+    for manifest, tag in pending:
+        clients[manifest.region].put_image(
+            repositoryName=manifest.repository,
+            imageManifest=manifest.content,
+            imageManifestMediaType=manifest.media_type,
+            imageTag=tag,
+            imageDigest=manifest.digest,
+        )
+        print(
+            f"TAGGED: {manifest.repository}:{tag} -> {manifest.digest} in {manifest.region}"
+        )
+
+
+def load_plan(path: Path) -> Plan:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    release = data["release"]
+    release["images"] = [Image(**image) for image in release["images"]]
+    return Plan(
+        Release(**release), [Manifest(**manifest) for manifest in data["manifests"]]
     )
 
 
 def main() -> None:
-    regions = parse_list(os.environ.get("REGIONS", ""))
-    repositories = parse_list(os.environ.get("REPOSITORIES", ""))
     try:
-        if not regions or not repositories:
-            raise ReleaseError("at least one region and one repository are required")
-        release = run(
-            clients={r: boto3.client("ecr", region_name=r) for r in regions},
-            repositories=repositories,
-            source_tag=os.environ.get("SOURCE_TAG") or "main",
-            version_override=os.environ.get("VERSION", ""),
-            now=datetime.now(timezone.utc),
-        )
+        plan_file = os.environ.get("PLAN_FILE", "")
+        if not plan_file:
+            raise ReleaseError("PLAN_FILE is required")
+        phase = os.environ.get("RELEASE_PHASE", "plan")
+        if phase == "plan":
+            regions = parse_list(os.environ.get("REGIONS", ""))
+            repositories = parse_list(os.environ.get("REPOSITORIES", ""))
+            if not regions or not repositories:
+                raise ReleaseError(
+                    "at least one region and one repository are required"
+                )
+            plan = run(
+                clients={r: boto3.client("ecr", region_name=r) for r in regions},
+                repositories=repositories,
+                source_tag=os.environ.get("SOURCE_TAG", ""),
+                version_override=os.environ.get("VERSION", ""),
+                now=datetime.now(timezone.utc),
+            )
+            Path(plan_file).write_text(json.dumps(asdict(plan)), encoding="utf-8")
+            write_or_print(os.environ.get("GITHUB_OUTPUT"), write_outputs(plan.release))
+            if notes_file := os.environ.get("NOTES_FILE"):
+                Path(notes_file).write_text(
+                    render_notes(plan.release), encoding="utf-8"
+                )
+        elif phase == "apply":
+            plan = load_plan(Path(plan_file))
+            apply_plan(
+                {r: boto3.client("ecr", region_name=r) for r in plan.release.regions},
+                plan,
+            )
+            write_or_print(
+                os.environ.get("GITHUB_STEP_SUMMARY"), render_notes(plan.release)
+            )
+        else:
+            raise ReleaseError(f"unknown release phase {phase!r}")
     except (ReleaseError, ClientError) as e:
         print(f"::error::{e}")
         sys.exit(1)
-
-    notes = render_notes(release)
-    write_or_print(os.environ.get("GITHUB_OUTPUT"), write_outputs(release))
-    write_or_print(os.environ.get("GITHUB_STEP_SUMMARY"), notes)
-    # The GitHub release step reads its notes from here.
-    if notes_file := os.environ.get("NOTES_FILE"):
-        Path(notes_file).write_text(notes, encoding="utf-8")
 
 
 def write_or_print(path: str | None, text: str) -> None:
@@ -144,26 +223,6 @@ def digest_for_tag(client, repo: str, tag: str) -> str | None:
     except client.exceptions.ImageNotFoundException:
         return None
     return response["imageDetails"][0]["imageDigest"]
-
-
-def retag_everywhere(clients: dict, image: Image, tags: list[str]) -> None:
-    for region, client in clients.items():
-        manifest, media_type = fetch_manifest(client, image.repository, image.digest)
-        for tag in tags:
-            ref = f"{image.repository}:{tag}"
-            existing = digest_for_tag(client, image.repository, tag)
-            if not should_put(tag, existing, image.digest):
-                print(f"OK: {ref} already on {image.digest} in {region}")
-                continue
-            client.put_image(
-                repositoryName=image.repository,
-                imageManifest=manifest,
-                imageManifestMediaType=media_type,
-                imageTag=tag,
-                # ECR rejects the put unless the manifest hashes to this digest.
-                imageDigest=image.digest,
-            )
-            print(f"TAGGED: {ref} -> {image.digest} in {region}")
 
 
 def fetch_manifest(client, repo: str, digest: str) -> tuple[str, str]:
@@ -212,22 +271,46 @@ def choose_ordered_tag(existing: Iterable[str], now: datetime) -> str:
     return min((t for t in existing if is_ordered_tag(t)), default=ordered_tag_for(now))
 
 
-def version_from_tags(tags: list[str], override: str) -> str | None:
+def is_sha_tag(tag: str) -> bool:
+    sha = tag.removeprefix("main-")
+    return (
+        tag.startswith("main-")
+        and 7 <= len(sha) <= 40
+        and all(c in "0123456789abcdef" for c in sha)
+    )
+
+
+def version_from_tags(
+    tags: list[str], override: str, source_tag: str = ""
+) -> str | None:
     if override:
         if not is_version_tag(override):
             raise ReleaseError(f"version {override!r} is not v<major>.<minor>.<n>")
         return override
-    return next((t for t in tags if is_version_tag(t)), None)
+    if is_version_tag(source_tag):
+        return source_tag
+    versions = sorted({tag for tag in tags if is_version_tag(tag)})
+    if len(versions) > 1:
+        raise ReleaseError(
+            f"ambiguous image versions: {', '.join(versions)}; select a version source tag or provide a version override"
+        )
+    return versions[0] if versions else None
 
 
-def short_sha_from_tags(tags: list[str]) -> str:
-    sha = next((t.removeprefix("main-") for t in tags if t.startswith("main-")), None)
-    if sha is None:
+def short_sha_from_tags(tags: list[str], source_tag: str = "") -> str:
+    if is_sha_tag(source_tag):
+        return source_tag.removeprefix("main-")
+    shas = sorted({tag.removeprefix("main-") for tag in tags if is_sha_tag(tag)})
+    if not shas:
         raise ReleaseError(
             f"image tagged {', '.join(tags)} carries no main-<sha> tag; "
             "only images from the Publish workflow can be released"
         )
-    return sha
+    if len(shas) > 1:
+        raise ReleaseError(
+            f"ambiguous image commits: {', '.join(shas)}; select a main-<sha> source tag"
+        )
+    return shas[0]
 
 
 def check_same_build(tags_by_repo: dict[str, list[str]], short_sha: str) -> None:

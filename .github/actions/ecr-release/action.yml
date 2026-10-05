@@ -5,9 +5,8 @@ inputs:
     description: 'Newline- or space-separated ECR repository names, all from the same build'
     required: true
   source-tag:
-    description: 'Tag of the image to release (main-<sha>, v<major.minor>.<n>, or main)'
-    required: false
-    default: 'main'
+    description: 'Immutable image tag to release: main-<sha> or v<major.minor>.<n>'
+    required: true
   regions:
     description: 'Newline- or space-separated AWS regions; the first is the source of truth'
     required: true
@@ -49,7 +48,7 @@ runs:
     - name: Install boto3
       run: pip install boto3
       shell: bash
-    - name: Tag the images in every region
+    - name: Preflight the images in every region
       id: release
       # Inputs travel as env vars, so multi-line lists and odd characters are safe.
       env:
@@ -58,9 +57,12 @@ runs:
         REGIONS: ${{ inputs.regions }}
         VERSION: ${{ inputs.version }}
         NOTES_FILE: ${{ runner.temp }}/ecr-release-notes.md
+        PLAN_FILE: ${{ runner.temp }}/ecr-release-plan.json
+        RELEASE_PHASE: plan
       run: python "${{ github.action_path }}/ecr_release.py"
       shell: bash
-    - name: Record the GitHub release
+    - name: Preflight the GitHub release
+      id: github
       if: inputs.github-release == 'true'
       env:
         GH_TOKEN: ${{ inputs.github-token }}
@@ -68,43 +70,23 @@ runs:
         SHORT_SHA: ${{ steps.release.outputs.short_sha }}
         RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
         ORDERED_TAG: ${{ steps.release.outputs.ordered_tag }}
+      run: bash "${{ github.action_path }}/github_release.sh" preflight
+      shell: bash
+    - name: Tag the images in every region
+      env:
+        PLAN_FILE: ${{ runner.temp }}/ecr-release-plan.json
+        RELEASE_PHASE: apply
+      run: python "${{ github.action_path }}/ecr_release.py"
+      shell: bash
+    - name: Record the GitHub release
+      if: inputs.github-release == 'true'
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        SHA: ${{ steps.github.outputs.sha }}
+        RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        ORDERED_TAG: ${{ steps.release.outputs.ordered_tag }}
         TITLE: ${{ steps.release.outputs.title }}
         NOTES_FILE: ${{ runner.temp }}/ecr-release-notes.md
+      run: bash "${{ github.action_path }}/github_release.sh" record
       shell: bash
-      run: |
-        set -euo pipefail
-        SHA="$(gh api "repos/${GH_REPO}/commits/${SHORT_SHA}" --jq .sha)"
-
-        # release-v<version> is a plain git tag on the same commit; a release tag is never moved.
-        if [[ -n "${RELEASE_TAG}" ]]; then
-          if EXISTING="$(gh api "repos/${GH_REPO}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha 2> /dev/null)"; then
-            if [[ "${EXISTING}" != "${SHA}" ]]; then
-              echo "::error::git tag ${RELEASE_TAG} already on ${EXISTING}, not ${SHA}; a release tag is never moved"
-              exit 1
-            fi
-            echo "OK: git tag ${RELEASE_TAG} already on ${SHA}"
-          else
-            gh api -X POST "repos/${GH_REPO}/git/refs" -f "ref=refs/tags/${RELEASE_TAG}" -f "sha=${SHA}" > /dev/null
-            echo "CREATED: git tag ${RELEASE_TAG} -> ${SHA}"
-          fi
-        fi
-
-        if gh release view "${ORDERED_TAG}" > /dev/null 2>&1; then
-          echo "OK: GitHub release ${ORDERED_TAG} already exists"
-          exit 0
-        fi
-
-        # Notes start at the newest earlier ordered release; ordered tags sort chronologically as text.
-        PREVIOUS=""
-        for TAG in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
-          if [[ "${TAG}" == release-[0-9]* && "${TAG}" < "${ORDERED_TAG}" && "${TAG}" > "${PREVIOUS}" ]]; then
-            PREVIOUS="${TAG}"
-          fi
-        done
-
-        ARGS=(--target "${SHA}" --title "${TITLE}" --notes-file "${NOTES_FILE}" --generate-notes --latest)
-        if [[ -n "${PREVIOUS}" ]]; then
-          ARGS+=(--notes-start-tag "${PREVIOUS}")
-        fi
-        gh release create "${ORDERED_TAG}" "${ARGS[@]}" > /dev/null
-        echo "CREATED: GitHub release ${ORDERED_TAG}"

@@ -8,10 +8,9 @@ on:
         required: true
         type: string
       source_tag:
-        description: 'Tag of the image to release. Default: main'
-        required: false
+        description: 'Immutable image tag to release: main-<sha> or v<major.minor>.<n>'
+        required: true
         type: string
-        default: ''
       regions:
         description: 'Newline- or space-separated AWS regions; the first is the source of truth. Default: vars.ECR_REPLICATION_REGIONS'
         required: false
@@ -73,10 +72,10 @@ jobs:
           aws-region: ${{ inputs.aws_region || vars.ECR_REGION }}
       - name: Release
         id: release
-        uses: CitrineInformatics/common-gh-actions/.github/actions/ecr-release@v3
+        uses: CitrineInformatics/common-gh-actions/.github/actions/ecr-release@ecr-release-v1
         with:
           repositories: ${{ inputs.repositories }}
-          source-tag: ${{ inputs.source_tag || 'main' }}
+          source-tag: ${{ inputs.source_tag }}
           regions: ${{ inputs.regions || vars.ECR_REPLICATION_REGIONS }}
           version: ${{ inputs.version }}
           github-release: ${{ inputs.github_release }}

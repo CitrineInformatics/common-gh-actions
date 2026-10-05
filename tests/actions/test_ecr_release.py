@@ -1,14 +1,19 @@
 """Tests for .github/actions/ecr-release/ecr_release.py"""
 
 import json
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 import boto3
 import ecr_release  # registered on sys.path via pythonpath in pyproject.toml
 import pytest
+from botocore.exceptions import ClientError
 from botocore.stub import Stubber
 from ecr_release import (
     Image,
+    Manifest,
+    Plan,
+    apply_plan,
     Release,
     ReleaseError,
     check_same_build,
@@ -24,7 +29,8 @@ from ecr_release import (
     parse_list,
     release_title,
     render_notes,
-    retag_everywhere,
+    is_sha_tag,
+    load_plan,
     run,
     short_sha_from_tags,
     should_put,
@@ -45,7 +51,7 @@ PUBLISHED_TAGS = ["main", "main-1ce448c", "v0.1.16"]
 
 def make_release(release_tag="release-v0.1.16", regions=("us-east-1",)):
     return Release(
-        source_tag="main",
+        source_tag="main-1ce448c",
         short_sha="1ce448c",
         release_tag=release_tag,
         ordered_tag=ORDERED,
@@ -82,32 +88,32 @@ def stubbed():
 # --- Stub helpers ------------------------------------------------------------
 
 
-def stub_describe(stubber, tag, digest=DIGEST, tags=None):
+def stub_describe(stubber, tag, digest=DIGEST, tags=None, repo=REPO):
     stubber.add_response(
         "describe_images",
         {
             "imageDetails": [
                 {
                     "registryId": ACCOUNT,
-                    "repositoryName": REPO,
+                    "repositoryName": repo,
                     "imageDigest": digest,
                     "imageTags": tags if tags is not None else [tag],
                 }
             ]
         },
-        {"repositoryName": REPO, "imageIds": [{"imageTag": tag}]},
+        {"repositoryName": repo, "imageIds": [{"imageTag": tag}]},
     )
 
 
-def stub_not_found(stubber, tag):
+def stub_not_found(stubber, tag, repo=REPO):
     stubber.add_client_error(
         "describe_images",
         service_error_code="ImageNotFoundException",
-        expected_params={"repositoryName": REPO, "imageIds": [{"imageTag": tag}]},
+        expected_params={"repositoryName": repo, "imageIds": [{"imageTag": tag}]},
     )
 
 
-def stub_manifest(stubber):
+def stub_manifest(stubber, repo=REPO):
     stubber.add_response(
         "batch_get_image",
         {
@@ -121,19 +127,19 @@ def stub_manifest(stubber):
             "failures": [],
         },
         {
-            "repositoryName": REPO,
+            "repositoryName": repo,
             "imageIds": [{"imageDigest": DIGEST}],
             "acceptedMediaTypes": ecr_release.MANIFEST_MEDIA_TYPES,
         },
     )
 
 
-def stub_put(stubber, tag):
+def stub_put(stubber, tag, repo=REPO):
     stubber.add_response(
         "put_image",
         {},
         {
-            "repositoryName": REPO,
+            "repositoryName": repo,
             "imageManifest": MANIFEST,
             "imageManifestMediaType": MEDIA_TYPE,
             "imageTag": tag,
@@ -268,7 +274,7 @@ class TestRenderNotes:
     def test_lists_both_tags_in_every_region(self):
         notes = render_notes(make_release(regions=("us-east-1", "eu-central-1")))
         assert notes.startswith("## release-v0.1.16 · 2026-09-24\n")
-        assert DIGEST in notes and "1ce448c" in notes and "`main`" in notes
+        assert DIGEST in notes and "1ce448c" in notes and "`main-1ce448c`" in notes
         for region in ("us-east-1", "eu-central-1"):
             assert image_ref(ACCOUNT, region, REPO, "release-v0.1.16") in notes
             assert image_ref(ACCOUNT, region, REPO, ORDERED) in notes
@@ -354,124 +360,268 @@ class TestEcr:
             fetch_manifest(clients["eu-central-1"], REPO, DIGEST)
 
 
-class TestRetagEverywhere:
-    def test_puts_a_fresh_tag_by_digest(self, stubbed, capsys):
+def make_plan(release_tag="release-v0.1.16"):
+    release = make_release(
+        release_tag=release_tag, regions=("us-east-1", "eu-central-1")
+    )
+    return Plan(
+        release,
+        [
+            Manifest(REPO, DIGEST, region, MANIFEST, MEDIA_TYPE)
+            for region in release.regions
+        ],
+    )
+
+
+class TestApplyPlan:
+    def test_puts_fresh_tags_by_saved_digest(self, stubbed, capsys):
         clients, stubbers = stubbed
         for s in stubbers.values():
-            stub_manifest(s)
             stub_not_found(s, ORDERED)
             stub_put(s, ORDERED)
-        retag_everywhere(clients, Image(REPO, DIGEST, ACCOUNT), [ORDERED])
+        apply_plan(clients, make_plan(release_tag=None))
         assert capsys.readouterr().out.count("TAGGED") == 2
 
-    def test_skips_a_tag_already_on_the_digest(self, stubbed, capsys):
+    def test_rerun_is_a_no_op(self, stubbed, capsys):
         clients, stubbers = stubbed
         for s in stubbers.values():
-            stub_manifest(s)
             stub_describe(s, ORDERED)
-        retag_everywhere(clients, Image(REPO, DIGEST, ACCOUNT), [ORDERED])
-        assert capsys.readouterr().out.count("OK:") == 2
+        apply_plan(clients, make_plan(release_tag=None))
+        assert capsys.readouterr().out == ""
 
-    def test_refuses_to_move_a_tag(self, stubbed):
+    def test_late_conflict_aborts_before_any_writes(self, stubbed):
         clients, stubbers = stubbed
-        stub_manifest(stubbers["us-east-1"])
-        stub_describe(stubbers["us-east-1"], ORDERED, digest=OTHER_DIGEST)
+        stub_not_found(stubbers["us-east-1"], ORDERED)
+        stub_describe(stubbers["eu-central-1"], ORDERED, digest=OTHER_DIGEST)
         with pytest.raises(ReleaseError, match="never moved"):
-            retag_everywhere(
-                {"us-east-1": clients["us-east-1"]},
-                Image(REPO, DIGEST, ACCOUNT),
-                [ORDERED],
-            )
-
-    def test_fails_when_a_region_lacks_the_digest(self, stubbed):
-        clients, stubbers = stubbed
-        stub_manifest(stubbers["us-east-1"])
-        stub_describe(stubbers["us-east-1"], ORDERED)
-        stubbers["eu-central-1"].add_response(
-            "batch_get_image", {"images": [], "failures": []}
-        )
-        with pytest.raises(ReleaseError, match="not replicated to eu-central-1"):
-            retag_everywhere(clients, Image(REPO, DIGEST, ACCOUNT), [ORDERED])
+            apply_plan(clients, make_plan(release_tag=None))
 
 
-# --- run() end to end --------------------------------------------------------
+def run_release(clients, repositories=(REPO,), source="main-1ce448c", version=""):
+    return run(clients, list(repositories), source, version, NOW)
 
 
-def run_release(clients, repositories=(REPO,)):
-    return run(
-        clients=clients,
-        repositories=list(repositories),
-        source_tag="main",
-        version_override="",
-        now=NOW,
-    )
+def stub_fresh_plan(stubbers, tags=("release-v0.1.16", ORDERED)):
+    for s in stubbers.values():
+        stub_manifest(s)
+        for tag in tags:
+            stub_not_found(s, tag)
 
 
 class TestRun:
     def test_first_release(self, stubbed):
         clients, stubbers = stubbed
-        stub_describe(stubbers["us-east-1"], "main", tags=PUBLISHED_TAGS)
+        stub_describe(stubbers["us-east-1"], "main-1ce448c", tags=PUBLISHED_TAGS)
+        stub_fresh_plan(stubbers)
+        plan = run_release(clients)
+        assert plan == make_plan()
+        # Applying checks all tags again, but never re-resolves the source.
         for s in stubbers.values():
-            stub_manifest(s)
             for tag in ("release-v0.1.16", ORDERED):
                 stub_not_found(s, tag)
+            for tag in ("release-v0.1.16", ORDERED):
                 stub_put(s, tag)
+        apply_plan(clients, plan)
 
-        release = run_release(clients)
-
-        assert release == Release(
-            source_tag="main",
-            short_sha="1ce448c",
-            release_tag="release-v0.1.16",
-            ordered_tag=ORDERED,
-            regions=["us-east-1", "eu-central-1"],
-            images=[Image(REPO, DIGEST, ACCOUNT)],
+    def test_retry_completes_partial_release_after_main_moves(self, stubbed):
+        clients, stubbers = stubbed
+        stub_describe(stubbers["us-east-1"], "main-1ce448c", tags=PUBLISHED_TAGS)
+        stub_fresh_plan(stubbers)
+        plan = run_release(clients)
+        for stubber in stubbers.values():
+            for tag in ("release-v0.1.16", ORDERED):
+                stub_not_found(stubber, tag)
+        for tag in ("release-v0.1.16", ORDERED):
+            stub_put(stubbers["us-east-1"], tag)
+        stubbers["eu-central-1"].add_client_error(
+            "put_image",
+            service_error_code="ServerException",
+            expected_params={
+                "repositoryName": REPO,
+                "imageManifest": MANIFEST,
+                "imageManifestMediaType": MEDIA_TYPE,
+                "imageTag": "release-v0.1.16",
+                "imageDigest": DIGEST,
+            },
         )
+        with pytest.raises(ClientError):
+            apply_plan(clients, plan)
+
+        # main now names another image; only the original immutable tag is read.
+        stub_describe(
+            stubbers["us-east-1"],
+            "main-1ce448c",
+            tags=["main-1ce448c", "v0.1.16", "release-v0.1.16", ORDERED],
+        )
+        for stubber in stubbers.values():
+            stub_manifest(stubber)
+        for tag in ("release-v0.1.16", ORDERED):
+            stub_describe(stubbers["us-east-1"], tag)
+            stub_not_found(stubbers["eu-central-1"], tag)
+        retry = run(clients, [REPO], "main-1ce448c", "", NOW + timedelta(hours=1))
+        assert retry.release == plan.release
+        for tag in ("release-v0.1.16", ORDERED):
+            stub_describe(stubbers["us-east-1"], tag)
+            stub_not_found(stubbers["eu-central-1"], tag)
+        for tag in ("release-v0.1.16", ORDERED):
+            stub_put(stubbers["eu-central-1"], tag)
+        apply_plan(clients, retry)
 
     def test_rerun_reuses_the_ordered_tag(self, stubbed):
         clients, stubbers = stubbed
         earlier = "release-2026.09.20.080000"
         stub_describe(
             stubbers["us-east-1"],
-            "main",
+            "main-1ce448c",
             tags=[*PUBLISHED_TAGS, "release-v0.1.16", earlier],
         )
         for s in stubbers.values():
             stub_manifest(s)
             stub_describe(s, "release-v0.1.16")
             stub_describe(s, earlier)
-
-        assert run_release(clients).ordered_tag == earlier
+        assert run_release(clients).release.ordered_tag == earlier
 
     def test_without_version_uses_only_the_ordered_tag(self, stubbed):
         clients, stubbers = stubbed
-        stub_describe(stubbers["us-east-1"], "main", tags=["main", "main-1ce448c"])
-        for s in stubbers.values():
-            stub_manifest(s)
-            stub_not_found(s, ORDERED)
-            stub_put(s, ORDERED)
+        stub_describe(
+            stubbers["us-east-1"], "main-1ce448c", tags=["main", "main-1ce448c"]
+        )
+        stub_fresh_plan(stubbers, (ORDERED,))
+        assert run_release(clients).release.release_tag is None
 
-        assert run_release(clients).release_tag is None
+    @pytest.mark.parametrize(
+        "source",
+        ["", "main", "latest", "release-2026.09.24.153012", "main-not-a-sha", "v0.1"],
+    )
+    def test_rejects_mutable_or_invalid_source_before_any_api_call(
+        self, stubbed, source
+    ):
+        clients, _ = stubbed
+        with pytest.raises(ReleaseError, match="source tag must be"):
+            run_release(clients, source=source)
+
+    def test_explicit_version_wins_over_alias_order(self, stubbed):
+        clients, stubbers = stubbed
+        stub_describe(
+            stubbers["us-east-1"], "v0.1.17", tags=[*PUBLISHED_TAGS, "v0.1.17"]
+        )
+        stub_fresh_plan(stubbers, ("release-v0.1.17", ORDERED))
+        assert (
+            run_release(clients, source="v0.1.17").release.release_tag
+            == "release-v0.1.17"
+        )
+
+    def test_explicit_commit_wins_over_alias_order(self, stubbed):
+        clients, stubbers = stubbed
+        stub_describe(
+            stubbers["us-east-1"],
+            "main-2222222",
+            tags=[*PUBLISHED_TAGS, "main-2222222"],
+        )
+        stub_fresh_plan(stubbers)
+        assert (
+            run_release(clients, source="main-2222222").release.short_sha == "2222222"
+        )
+
+    def test_ambiguous_versions_abort_before_writes(self, stubbed):
+        clients, stubbers = stubbed
+        stub_describe(
+            stubbers["us-east-1"], "main-1ce448c", tags=[*PUBLISHED_TAGS, "v0.1.17"]
+        )
+        with pytest.raises(ReleaseError, match="ambiguous image versions"):
+            run_release(clients)
+
+    def test_override_resolves_ambiguous_versions(self, stubbed):
+        clients, stubbers = stubbed
+        stub_describe(
+            stubbers["us-east-1"], "main-1ce448c", tags=[*PUBLISHED_TAGS, "v0.1.17"]
+        )
+        stub_fresh_plan(stubbers, ("release-v1.2.3", ORDERED))
+        assert (
+            run_release(clients, version="v1.2.3").release.release_tag
+            == "release-v1.2.3"
+        )
+
+    def test_ambiguous_commits_abort_before_writes(self, stubbed):
+        clients, stubbers = stubbed
+        stub_describe(
+            stubbers["us-east-1"], "v0.1.16", tags=[*PUBLISHED_TAGS, "main-2222222"]
+        )
+        with pytest.raises(ReleaseError, match="ambiguous image commits"):
+            run_release(clients, source="v0.1.16")
 
     def test_images_from_different_builds_fail(self, stubbed):
         clients, stubbers = stubbed
-        stub_describe(stubbers["us-east-1"], "main", tags=PUBLISHED_TAGS)
-        stubbers["us-east-1"].add_response(
-            "describe_images",
-            {
-                "imageDetails": [
-                    {
-                        "registryId": ACCOUNT,
-                        "repositoryName": "other",
-                        "imageDigest": OTHER_DIGEST,
-                        "imageTags": ["main", "main-0000000"],
-                    }
-                ]
-            },
-            {"repositoryName": "other", "imageIds": [{"imageTag": "main"}]},
+        stub_describe(stubbers["us-east-1"], "main-1ce448c", tags=PUBLISHED_TAGS)
+        stub_describe(
+            stubbers["us-east-1"],
+            "main-1ce448c",
+            digest=OTHER_DIGEST,
+            tags=["main", "main-0000000"],
+            repo="other",
         )
         with pytest.raises(ReleaseError, match="^other is not tagged main-1ce448c"):
             run_release(clients, repositories=(REPO, "other"))
+
+    def test_missing_last_region_aborts_before_any_writes(self, stubbed):
+        clients, stubbers = stubbed
+        stub_describe(stubbers["us-east-1"], "main-1ce448c", tags=PUBLISHED_TAGS)
+        stub_manifest(stubbers["us-east-1"])
+        stubbers["eu-central-1"].add_response(
+            "batch_get_image", {"images": [], "failures": []}
+        )
+        with pytest.raises(ReleaseError, match="not replicated to eu-central-1"):
+            run_release(clients)
+
+    @pytest.mark.parametrize("conflict", ["release-v0.1.16", ORDERED])
+    def test_conflicting_last_region_aborts_before_any_writes(self, stubbed, conflict):
+        clients, stubbers = stubbed
+        stub_describe(stubbers["us-east-1"], "main-1ce448c", tags=PUBLISHED_TAGS)
+        for s in stubbers.values():
+            stub_manifest(s)
+        for tag in ("release-v0.1.16", ORDERED):
+            stub_not_found(stubbers["us-east-1"], tag)
+        if conflict == ORDERED:
+            stub_not_found(stubbers["eu-central-1"], "release-v0.1.16")
+        stub_describe(stubbers["eu-central-1"], conflict, digest=OTHER_DIGEST)
+        with pytest.raises(ReleaseError, match="never moved"):
+            run_release(clients)
+
+    def test_missing_last_repository_aborts_before_any_writes(self, stubbed):
+        clients, stubbers = stubbed
+        for repo in (REPO, "other"):
+            stub_describe(
+                stubbers["us-east-1"], "main-1ce448c", tags=PUBLISHED_TAGS, repo=repo
+            )
+        for s in stubbers.values():
+            stub_manifest(s)
+        stub_manifest(stubbers["us-east-1"], repo="other")
+        stubbers["eu-central-1"].add_response(
+            "batch_get_image",
+            {"images": [], "failures": []},
+            {
+                "repositoryName": "other",
+                "imageIds": [{"imageDigest": DIGEST}],
+                "acceptedMediaTypes": ecr_release.MANIFEST_MEDIA_TYPES,
+            },
+        )
+        with pytest.raises(ReleaseError, match="other.*not replicated"):
+            run_release(clients, repositories=(REPO, "other"))
+
+
+@pytest.mark.parametrize(
+    "tag,expected",
+    [
+        ("main-1ce448c", True),
+        ("main-" + "a" * 40, True),
+        ("main-abcdef", False),
+        ("main-" + "a" * 41, False),
+        ("main-invalid", False),
+        ("latest", False),
+    ],
+)
+def test_is_sha_tag(tag, expected):
+    assert is_sha_tag(tag) is expected
 
 
 # --- main() ------------------------------------------------------------------
@@ -479,10 +629,12 @@ class TestRun:
 
 class TestMain:
     @pytest.fixture
-    def env(self, monkeypatch):
+    def env(self, monkeypatch, tmp_path):
         monkeypatch.setenv("REPOSITORIES", f"{REPO}\n")
         monkeypatch.setenv("REGIONS", "us-east-1 eu-central-1")
-        monkeypatch.setenv("SOURCE_TAG", "")
+        monkeypatch.setenv("SOURCE_TAG", "main-1ce448c")
+        monkeypatch.setenv("PLAN_FILE", str(tmp_path / "plan.json"))
+        monkeypatch.setenv("RELEASE_PHASE", "plan")
         monkeypatch.setenv("VERSION", "")
         monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
         monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
@@ -494,7 +646,7 @@ class TestMain:
 
         def fake(**kwargs):
             calls.append(kwargs)
-            return make_release()
+            return make_plan()
 
         monkeypatch.setattr(ecr_release, "run", fake)
         return calls
@@ -513,17 +665,21 @@ class TestMain:
         (kwargs,) = fake_run
         assert list(kwargs["clients"]) == ["us-east-1", "eu-central-1"]
         assert kwargs["repositories"] == [REPO]
-        assert kwargs["source_tag"] == "main"
+        assert kwargs["source_tag"] == "main-1ce448c"
         assert kwargs["now"].tzinfo == timezone.utc
         assert output.read_text(encoding="utf-8") == write_outputs(make_release())
-        assert summary.read_text(encoding="utf-8") == render_notes(make_release())
-        assert notes.read_text(encoding="utf-8") == render_notes(make_release())
+        assert not summary.exists()
+        assert (
+            load_plan(ecr_release.Path(ecr_release.os.environ["PLAN_FILE"]))
+            == make_plan()
+        )
+        assert notes.read_text(encoding="utf-8") == render_notes(make_plan().release)
 
     def test_prints_without_github_files(self, env, fake_run, capsys):
         main()
         out = capsys.readouterr().out
         assert f"ordered_tag={ORDERED}" in out
-        assert "| Image | Digest |" in out
+        assert "| Image | Digest |" not in out
 
     def test_release_error_exits_1(self, env, monkeypatch, capsys):
         def fail(**kwargs):
@@ -541,3 +697,44 @@ class TestMain:
             main()
         assert "::error::at least one region" in capsys.readouterr().out
         assert fake_run == []
+
+    def test_requires_plan_file(self, env, fake_run, monkeypatch, capsys):
+        monkeypatch.delenv("PLAN_FILE")
+        with pytest.raises(SystemExit):
+            main()
+        assert "PLAN_FILE is required" in capsys.readouterr().out
+        assert fake_run == []
+
+    def test_rejects_unknown_phase(self, env, monkeypatch, capsys):
+        monkeypatch.setenv("RELEASE_PHASE", "invalid")
+        with pytest.raises(SystemExit):
+            main()
+        assert "unknown release phase" in capsys.readouterr().out
+
+    def test_apply_reads_saved_plan_even_if_source_input_changes(
+        self, env, fake_run, monkeypatch, tmp_path
+    ):
+        plan_file = tmp_path / "plan.json"
+        plan_file.write_text(json.dumps(asdict(make_plan())))
+        monkeypatch.setenv("PLAN_FILE", str(plan_file))
+        monkeypatch.setenv("RELEASE_PHASE", "apply")
+        monkeypatch.setenv("SOURCE_TAG", "main-2222222")
+        summary = tmp_path / "summary"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+        applied = []
+        monkeypatch.setattr(
+            ecr_release, "apply_plan", lambda clients, plan: applied.append(plan)
+        )
+        main()
+        assert applied == [make_plan()]
+        assert fake_run == []
+        assert summary.read_text(encoding="utf-8") == render_notes(make_plan().release)
+
+    def test_apply_prints_summary_without_github_file(
+        self, env, monkeypatch, tmp_path, capsys
+    ):
+        (tmp_path / "plan.json").write_text(json.dumps(asdict(make_plan())))
+        monkeypatch.setenv("RELEASE_PHASE", "apply")
+        monkeypatch.setattr(ecr_release, "apply_plan", lambda clients, plan: None)
+        main()
+        assert "| Image | Digest |" in capsys.readouterr().out
