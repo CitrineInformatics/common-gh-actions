@@ -8,9 +8,8 @@ dependencies = ["packaging>=21"]
 
 [dependency-groups]
 dev = [
-    "boto3>=1.34",
-    "pytest>=8",
-    "pytest-cov>=6",
+    "pytest>=8", 
+    "pytest-cov>=6", 
     "ruff>=0.11"
 ]
 
@@ -19,7 +18,6 @@ pythonpath = [
     ".github/actions/extract-version",
     ".github/actions/check-version-bump",
     ".github/actions/check-deprecations",
-    ".github/actions/ecr-release",
 ]
 testpaths = ["tests"]
 

@@ -100,31 +100,15 @@ Scans Python source files for `@deprecation.deprecated` decorators and `warnings
 
 ### ecr-release
 
-Marks a published ECR image as a release without rebuilding it. The image gets `release-v<version>` (when it carries a `v<major.minor>.<n>` tag) and `release-YYYY.MM.DD.HHMMSS` (UTC) in every region, on the same digest everywhere. An immutable source tag is required. Every regional manifest, destination tag, and GitHub commit/tag (when enabled) is checked before release tags are written. A release tag is never moved, so re-running a release is a no-op. Unexpected write failures can leave a partial release; retry the same source tag to complete it. It also creates a GitHub release on the ordered tag, with `release-v<version>` as an extra git tag on the same commit.
-
-An explicit version source tag supplies the release version, and an explicit commit source tag supplies the commit. Ambiguous inferred versions or commits fail; use a version source tag or the `version` override to resolve multiple version tags.
-
-It assumes AWS credentials are already configured and needs `contents: write` for the GitHub release. Most repos call the [`ecr-release.yml`](#ecr-releaseyml-ecr-release) workflow instead.
+Tags an image that Publish pushed to ECR as a release, in every region, without rebuilding it. The image gets `release-v<version>` from its `v<major.minor>.<n>` tag, when it has one, and `release-YYYY.MM.DD.HHMMSS` in UTC, which orders releases by date. The action then creates a GitHub release on the date tag, at the image's commit, with `release-v<version>` as a second git tag. Re-running with the same source tag completes a partial release. Most repos call the [`ecr-release.yml`](#ecr-releaseyml-ecr-release) workflow, which configures AWS credentials first.
 
 #### Inputs
 
-| Name | Required | Default | Description |
-|------|----------|---------|-------------|
-| `repositories` | yes | | Newline- or space-separated ECR repository names, all from the same build |
-| `source-tag` | yes | | Immutable image tag: `main-<sha>` or `v<major.minor>.<n>`; resolved to a digest once |
-| `regions` | yes | | Newline- or space-separated AWS regions; the first is the source of truth |
-| `version` | no | `""` | Override the `v<major.minor>.<n>` version read from the image tags |
-| `github-release` | no | `true` | Create the git tag and GitHub release |
-| `github-token` | no | `github.token` | Token for the GitHub release |
-
-#### Outputs
-
-| Name | Description |
-|------|-------------|
-| `release-tag` | `release-v<version>`, or empty when the image has no version |
-| `ordered-tag` | `release-YYYY.MM.DD.HHMMSS`, which the GitHub release hangs off |
-| `short-sha` | Short SHA of the commit the image was built from (from its `main-<sha>` tag) |
-| `digests` | JSON object of repository to released image digest |
+| Name | Required | Description |
+|------|----------|-------------|
+| `repositories` | yes | Newline- or space-separated ECR repository names, all from the same build |
+| `source-tag` | yes | Immutable image tag: `main-<sha>` or `v<major.minor>.<n>` |
+| `regions` | yes | Newline- or space-separated AWS regions. The action reads the image tags from the first region. |
 
 ## Workflows
 
@@ -184,9 +168,7 @@ Coverage is only enforced on the pinned Python version (run-tests-default job).
 
 ### ecr-release.yml (ECR Release)
 
-Configures AWS credentials through OIDC, then runs the [`ecr-release`](#ecr-release) action.
-
-The ECR release workflow and action use the `ecr-release-v1` tag, independently of the repository's existing `v3` workflows. Publish this tag on a commit containing both components before enabling callers.
+Configures AWS credentials through OIDC, then runs the [`ecr-release`](#ecr-release) action. The workflow reads the caller's repository variables. A caller passes `repositories` and `source_tag`, and the other inputs default to those variables.
 
 ```yaml
 name: Release
@@ -195,13 +177,13 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: 'Immutable image tag to release: main-<sha> or v<major.minor>.<n>'
+        description: 'Image tag to release: main-<sha> or v<major.minor>.<n>'
         required: true
         type: string
 
 jobs:
   release:
-    uses: CitrineInformatics/common-gh-actions/.github/workflows/ecr-release.yml@ecr-release-v1
+    uses: CitrineInformatics/common-gh-actions/.github/workflows/ecr-release.yml@v3
     permissions:
       contents: write
       id-token: write
@@ -210,28 +192,14 @@ jobs:
       source_tag: ${{ inputs.source_tag }}
 ```
 
-The caller needs `contents: write` and `id-token: write`. A called workflow reads the caller's repository variables, so callers normally set only `repositories`.
-
 #### Inputs
 
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
 | `repositories` | yes | | Newline- or space-separated ECR repository names |
 | `source_tag` | yes | | Immutable image tag: `main-<sha>` or `v<major.minor>.<n>` |
-| `regions` | no | `vars.ECR_REPLICATION_REGIONS` | AWS regions; the first is the source of truth |
+| `regions` | no | `vars.ECR_REPLICATION_REGIONS` | AWS regions. The action reads the image tags from the first region. |
 | `aws_role` | no | `vars.AWS_ECR_ROLE` | IAM role to assume through OIDC |
-| `aws_region` | no | `vars.ECR_REGION` | Region for the AWS credentials |
-| `version` | no | `""` | Override the version read from the image tags |
-| `github_release` | no | `true` | Create the git tag and GitHub release |
-
-#### Outputs
-
-| Name | Description |
-|------|-------------|
-| `release_tag` | `release-v<version>`, or empty when the image has no version |
-| `ordered_tag` | `release-YYYY.MM.DD.HHMMSS` |
-| `short_sha` | Short SHA of the commit the image was built from |
-| `digests` | JSON object of repository to released image digest |
 
 ### deploy-docs.yml (Build and Deploy Docs)
 
