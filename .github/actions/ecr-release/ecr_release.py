@@ -10,10 +10,10 @@ writing; the action validates GitHub before applying the saved plan.
 import json
 import os
 import sys
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
 import boto3
 from botocore.exceptions import ClientError
@@ -165,7 +165,7 @@ def main() -> None:
                 repositories=repositories,
                 source_tag=os.environ.get("SOURCE_TAG", ""),
                 version_override=os.environ.get("VERSION", ""),
-                now=datetime.now(timezone.utc),
+                now=datetime.now(UTC),
             )
             Path(plan_file).write_text(json.dumps(asdict(plan)), encoding="utf-8")
             write_or_print(os.environ.get("GITHUB_OUTPUT"), write_outputs(plan.release))
@@ -256,14 +256,14 @@ def is_version_tag(tag: str) -> bool:
 
 def is_ordered_tag(tag: str) -> bool:
     try:
-        datetime.strptime(tag, ORDERED_FORMAT)
+        datetime.strptime(tag, ORDERED_FORMAT).replace(tzinfo=UTC)
     except ValueError:
         return False
     return True
 
 
 def ordered_tag_for(now: datetime) -> str:
-    return now.astimezone(timezone.utc).strftime(ORDERED_FORMAT)
+    return now.astimezone(UTC).strftime(ORDERED_FORMAT)
 
 
 def choose_ordered_tag(existing: Iterable[str], now: datetime) -> str:
@@ -338,7 +338,9 @@ def should_put(tag: str, existing_digest: str | None, digest: str) -> bool:
 def release_title(release: Release) -> str:
     if not release.release_tag:
         return release.ordered_tag
-    released_on = datetime.strptime(release.ordered_tag, ORDERED_FORMAT)
+    released_on = datetime.strptime(release.ordered_tag, ORDERED_FORMAT).replace(
+        tzinfo=UTC
+    )
     return f"{release.release_tag} · {released_on:%Y-%m-%d}"
 
 
