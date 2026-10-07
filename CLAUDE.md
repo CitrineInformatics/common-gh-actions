@@ -1,6 +1,6 @@
 # common-gh-actions
 
-Shared GitHub Actions and reusable workflows for CitrineInformatics Python repositories.
+Shared GitHub Actions and reusable workflows for CitrineInformatics repositories.
 
 ## Project Structure
 

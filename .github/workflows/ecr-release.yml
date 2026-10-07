@@ -1,0 +1,45 @@
+name: ECR Release
+
+on:
+  workflow_call:
+    inputs:
+      repositories:
+        description: 'Newline- or space-separated ECR repository names, all from the same build'
+        required: true
+        type: string
+      source_tag:
+        description: 'Immutable image tag to release: main-<sha> or v<major.minor>.<n>'
+        required: true
+        type: string
+      regions:
+        description: 'Newline- or space-separated AWS regions. Default: vars.ECR_REPLICATION_REGIONS'
+        required: false
+        type: string
+        default: ''
+      aws_role:
+        description: 'IAM role to assume through OIDC. Default: vars.AWS_ECR_ROLE'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  release:
+    name: Release image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      # vars resolve to the caller's repository variables in a called workflow.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ inputs.aws_role || vars.AWS_ECR_ROLE }}
+          aws-region: ${{ vars.ECR_REGION }}
+      - name: Release
+        uses: CitrineInformatics/common-gh-actions/.github/actions/ecr-release@v3
+        with:
+          repositories: ${{ inputs.repositories }}
+          source-tag: ${{ inputs.source_tag }}
+          regions: ${{ inputs.regions || vars.ECR_REPLICATION_REGIONS }}

@@ -6,7 +6,6 @@ import os
 import sys
 import tomllib
 from pathlib import Path
-from typing import Tuple
 
 from packaging.version import InvalidVersion, Version
 
@@ -77,7 +76,7 @@ def module_to_file(module: str, package_root: Path = Path(".")) -> Path:
 
 def attr_to_file_and_variable(
     attr: str, package_root: Path = Path(".")
-) -> Tuple[Path, str]:
+) -> tuple[Path, str]:
     """Split a setuptools ``attr`` string into a file path and variable name.
 
     Parameters

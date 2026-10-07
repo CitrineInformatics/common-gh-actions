@@ -1,6 +1,6 @@
 # common-gh-actions
 
-Shared GitHub Actions and reusable workflows for Citrine's Python repositories.
+Shared GitHub Actions and reusable workflows for Citrine repositories.
 
 ## Quick Start
 
@@ -98,6 +98,18 @@ Scans Python source files for `@deprecation.deprecated` decorators and `warnings
 | `src` | yes | | Path to the source directory to scan |
 | `root` | no | `"."` | Path to the project root containing `pyproject.toml` |
 
+### ecr-release
+
+Tags an image that Publish pushed to ECR as a release, in every region, without rebuilding it. The image gets `release-v<version>` from its `v<major.minor>.<n>` tag, when it has one, and `release-YYYY.MM.DD.HHMMSS` in UTC, which orders releases by date. The action then creates a GitHub release on the date tag, at the image's commit, with `release-v<version>` as a second git tag. Re-running with the same source tag completes a partial release. Most repos call the [`ecr-release.yml`](#ecr-releaseyml-ecr-release) workflow, which configures AWS credentials first.
+
+#### Inputs
+
+| Name | Required | Description |
+|------|----------|-------------|
+| `repositories` | yes | Newline- or space-separated ECR repository names, all from the same build |
+| `source-tag` | yes | Immutable image tag: `main-<sha>` or `v<major.minor>.<n>` |
+| `regions` | yes | Newline- or space-separated AWS regions. The action reads the image tags from the first region. |
+
 ## Workflows
 
 ### repo-checks.yml (PR Checks)
@@ -153,6 +165,41 @@ Coverage is only enforced on the pinned Python version (run-tests-default job).
 - **run-tests-default** -- Tests with default dependencies and coverage threshold.
 - **run-tests** -- Matrix across Python versions and OSes with `lowest-direct` resolution.
 - **run-tests-against-latest** -- Matrix across Python versions and OSes with `highest` resolution, potentially including the main branches of citrine-python and gemd-python.
+
+### ecr-release.yml (ECR Release)
+
+Configures AWS credentials through OIDC, then runs the [`ecr-release`](#ecr-release) action. The workflow reads the caller's repository variables. A caller passes `repositories` and `source_tag`, and the other inputs default to those variables.
+
+```yaml
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: 'Image tag to release: main-<sha> or v<major.minor>.<n>'
+        required: true
+        type: string
+
+jobs:
+  release:
+    uses: CitrineInformatics/common-gh-actions/.github/workflows/ecr-release.yml@v3
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      repositories: platform/backend/my-service
+      source_tag: ${{ inputs.source_tag }}
+```
+
+#### Inputs
+
+| Name | Required | Default | Description |
+|------|----------|---------|-------------|
+| `repositories` | yes | | Newline- or space-separated ECR repository names |
+| `source_tag` | yes | | Immutable image tag: `main-<sha>` or `v<major.minor>.<n>` |
+| `regions` | no | `vars.ECR_REPLICATION_REGIONS` | AWS regions. The action reads the image tags from the first region. |
+| `aws_role` | no | `vars.AWS_ECR_ROLE` | IAM role to assume through OIDC |
 
 ### deploy-docs.yml (Build and Deploy Docs)
 

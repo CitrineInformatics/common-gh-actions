@@ -1,0 +1,24 @@
+name: 'ECR Release'
+description: 'Tag a published ECR image as a release in every region and record a GitHub release. Assumes AWS credentials are already configured.'
+inputs:
+  repositories:
+    description: 'Newline- or space-separated ECR repository names, all from the same build'
+    required: true
+  source-tag:
+    description: 'Immutable image tag to release: main-<sha> or v<major.minor>.<n>'
+    required: true
+  regions:
+    description: 'Newline- or space-separated AWS regions. The action reads the image tags from the first region.'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Release
+      env:
+        REPOSITORIES: ${{ inputs.repositories }}
+        SOURCE_TAG: ${{ inputs.source-tag }}
+        REGIONS: ${{ inputs.regions }}
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: bash "${{ github.action_path }}/release.sh"
+      shell: bash
