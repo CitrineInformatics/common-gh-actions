@@ -114,7 +114,7 @@ Tags an image that Publish pushed to ECR as a release, in every region, without 
 
 ### repo-checks.yml (PR Checks)
 
-Runs standard PR checks: linting, version bump verification, deprecation scanning, and uv.lock consistency.
+Runs standard PR checks: linting, version bump verification, deprecation scanning, uv.lock consistency, and (optionally) a warnings-as-errors docs build.
 
 #### Inputs
 
@@ -125,6 +125,7 @@ Runs standard PR checks: linting, version bump verification, deprecation scannin
 | `check_version_bump` | no | `true` | Verify the version in `pyproject.toml` has been incremented |
 | `check_deprecation` | no | `true` | Check for expired deprecations |
 | `check_uv_lock` | no | `true` | Verify `uv.lock` is in sync with `pyproject.toml` |
+| `check_docs` | no | `false` | Build the Sphinx docs in `docs/` and fail on any warning. Planned to default to `true` in v4 |
 
 #### Jobs
 
@@ -136,6 +137,7 @@ Runs standard PR checks: linting, version bump verification, deprecation scannin
 - **version-bump** -- Compares PR vs. main version (skippable).
 - **deprecation-check** -- Scans for expired deprecations (skippable).
 - **uv-lock-check** -- Runs `uv lock --check` to verify `uv.lock` matches `pyproject.toml` (skippable).
+- **docs-check** -- Runs `make -C docs/ html` with `SPHINXOPTS='-W --keep-going'` so any Sphinx warning fails the check (opt-in via `check_docs`). Requires a `docs` dependency group and a standard Sphinx `docs/Makefile`.
 
 ### matrix-tests.yml (PR Tests)
 

@@ -27,6 +27,11 @@ on:
         required: false
         type: boolean
         default: true
+      check_docs:
+        description: 'If true, build the Sphinx docs and fail on any warning. Default: false'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -153,3 +158,21 @@ jobs:
       # `uv lock --check` exits non-zero on a stale lock without modifying it.
       - name: Verify lockfile matches pyproject.toml
         run: uv lock --check
+
+  docs-check:
+    name: Verify docs build without warnings
+    if: ${{ inputs.check_docs }}
+    runs-on: ubuntu-latest
+    steps:
+      # Simple checkout before initialize allows common-gh-actions to use its own workflows
+      - name: Simple checkout
+        uses: actions/checkout@v6
+      - name: Initialize the documentation environment
+        uses: CitrineInformatics/common-gh-actions/.github/actions/initialize@v3
+        with:
+          documentation: 'true'
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+      # sphinx-build lives in the uv-managed .venv, so make must run through uv
+      - name: Build docs with warnings as errors
+        run: uv run --no-sync make -C docs/ html SPHINXOPTS='-W --keep-going'
