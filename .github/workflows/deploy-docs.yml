@@ -31,7 +31,7 @@ jobs:
           app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
       - name: Build Docs
         run: |
-          make -C docs/ html
+          uv run --no-sync make -C docs/ html
           touch docs/_build/html/.nojekyll
       - name: Setup Pages
         uses: actions/configure-pages@v5
